@@ -19,11 +19,18 @@ app.use(express.json()); // Parsea JSON bodies
 // Importar rutas
 const apiRoutes = require('./routes/api');
 
-// Rutas API Iniciales
-app.get('/', (req, res) => {
-    res.json({ message: "🌌 Motor Coloritos Scouter Online." });
-});
+const path = require('path');
+
+// Rutas API (Ocultas)
 app.use('/api', apiRoutes);
+
+// Producción: Servir el frontend de React ensamblado (dist/)
+app.use(express.static(path.join(__dirname, '../dist')));
+
+// Fallback: Cualquier ruta que no sea de la API, se la enviamos a React
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../dist/index.html'));
+});
 
 // Iniciamos el motor Node.js
 app.listen(PORT, () => {

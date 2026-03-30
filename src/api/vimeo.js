@@ -1,7 +1,7 @@
 // src/api/vimeo.js
 // OPINIONATED REWRITE: Proxy hacia el Backend Opcion B
 
-const API_URL = 'http://localhost:3000/api';
+const API_URL = import.meta.env.PROD ? '/api' : 'http://localhost:3000/api';
 
 export const getFollowedDirectors = async (token) => {
   // Ignoramos el token del cliente. El backend lee su propio .env

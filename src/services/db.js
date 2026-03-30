@@ -2,7 +2,7 @@
 // OPINIONATED REWRITE: Ya no usamos IndexedDB/LocalForage.
 // Todo redirige al nuevo servidor centralizado de MongoDB.
 
-const API_URL = 'http://localhost:3000/api';
+const API_URL = import.meta.env.PROD ? '/api' : 'http://localhost:3000/api';
 
 export const saveDirectorData = async (directorUri, data) => {
     // Delegado al Backend: El backend ya persiste automáticamente 
