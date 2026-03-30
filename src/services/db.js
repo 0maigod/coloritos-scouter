@@ -1,57 +1,52 @@
-import localforage from 'localforage';
+// src/services/db.js
+// OPINIONATED REWRITE: Ya no usamos IndexedDB/LocalForage.
+// Todo redirige al nuevo servidor centralizado de MongoDB.
 
-localforage.config({
-  name: 'VimeoScouterDB',
-  storeName: 'directors_data',
-  description: 'Caché de videos y clasificaciones de directores de Vimeo'
-});
+const API_URL = 'http://localhost:3000/api';
 
 export const saveDirectorData = async (directorUri, data) => {
-    try {
-        await localforage.setItem(directorUri, data);
-    } catch(e) {
-        console.error("LocalForage Set Error:", e);
-    }
+    // Delegado al Backend: El backend ya persiste automáticamente 
+    // cuando llama a /api/gemini/classify.
+    console.log("Interceptor DB: Save ignorado. Delegado a MongoDB.");
 };
 
 export const getDirectorData = async (directorUri) => {
-    try {
-        return await localforage.getItem(directorUri);
-    } catch(e) {
-        console.error("LocalForage Get Error:", e);
-        return null;
-    }
+    // Delegado. Si se pide localmente, devolvemos null para forzar network fetch
+    return null;
 };
 
 export const getAllCachedVideos = async () => {
     try {
-        const keys = await localforage.keys();
-        let allVideos = [];
-        for(let key of keys) {
-            if (key !== 'all_directors' && key !== 'gemini_token') {
-                const data = await localforage.getItem(key);
-                if (data) {
-                    let vidsArray = [];
-                    if (Array.isArray(data.videos)) {
-                        vidsArray = data.videos;
-                    } else if (Array.isArray(data)) {
-                        vidsArray = data; // Legacy support
-                    }
-
-                    if (vidsArray.length > 0) {
-                        const injected = vidsArray.map(v => ({ ...v, _directorUri: key }));
-                        allVideos = allVideos.concat(injected);
-                    }
-                }
-            }
-        }
-        return allVideos;
+        const res = await fetch(`${API_URL}/videos`);
+        if (!res.ok) throw new Error("API Mongo no responde");
+        return await res.json();
     } catch (e) {
-        console.error("Error fetching all cached videos", e);
+        console.error("Centralized Storage Error", e);
         return [];
     }
 };
 
 export const clearDB = async () => {
-    await localforage.clear();
+    console.warn("🛡️ Firewall local: No puedes purgar la Base de Datos Centralizada desde este botón.");
+    alert("Purga local deshabilitada por seguridad (Estamos en DB Centralizada).");
 };
+
+// ==========================================
+// NUEVO METODO DE RETAG PARA LA DB
+// ==========================================
+export const updateVideoRetag = async (videoUri, category, subCategory, brand) => {
+    try {
+        const res = await fetch(`${API_URL}/videos/retag`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ videoUri, category, subCategory, brand })
+        });
+        if (!res.ok) throw new Error("Error retagueando en Base Centralizada");
+        return true;
+    } catch(e) {
+        console.error("Retag Error:", e);
+        return false;
+    }
+}

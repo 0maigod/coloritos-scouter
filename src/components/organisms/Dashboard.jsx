@@ -4,7 +4,7 @@ import Button from '../atoms/Button';
 import Input from '../atoms/Input';
 import { useApp } from '../../hooks/useApp';
 import DirectorGraph from './DirectorGraph';
-import { getAllCachedVideos, saveDirectorData } from '../../services/db';
+import { getAllCachedVideos, updateVideoRetag } from '../../services/db';
 
 const MAIN_CATEGORIES = ["Directores", "Alimentos y Bebidas", "Moda y Belleza", "Movilidad", "Servicios y Tecnología", "Arte y Entretenimiento", "Otro"];
 const SUB_CATEGORIES = {
@@ -37,10 +37,18 @@ const Dashboard = ({ onLogout }) => {
   // Cerrar Árbol D3 con ESC y Auto-Abrir con typing
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // 1. ESC Escape Hatch: Debe funcionar SIEMPRE, incluso si el Input está focado
-      if (e.key === 'Escape' && isSearchFocused) {
-        setIsSearchFocused(false);
-        document.activeElement?.blur(); // Remover foco del input para resetear estado manual
+      // 1. ESC Escape Hatch: Toggle Inteligente
+      if (e.key === 'Escape') {
+        if (retagVideo) {
+            setRetagVideo(null); // Si el usuario está re-clasificando, ESC aborta eso en lugar de abrir el Árbol
+            return;
+        }
+        if (isSearchFocused) {
+            setIsSearchFocused(false);
+            document.activeElement?.blur();
+        } else {
+            setIsSearchFocused(true);
+        }
         return;
       }
 
@@ -215,14 +223,14 @@ const Dashboard = ({ onLogout }) => {
       );
   };
 
-  const handleRetag = (video, newMain, newSub, newBrand) => {
+  const handleRetag = async (video, newMain, newSub, newBrand) => {
       const b = newBrand || video.brand || 'Indefinida';
       const updatedVids = videos.map(v => v.id === video.id ? { ...v, category: newMain, subCategory: newSub, brand: b } : v);
       setVideos(updatedVids);
       setAllCachedVideos(prev => prev.map(v => v.id === video.id ? { ...v, category: newMain, subCategory: newSub, brand: b } : v));
       
-      const apiTotalVideos = selectedDirector?.metadata?.connections?.videos?.total || 0;
-      saveDirectorData(selectedDirector.uri, { total: apiTotalVideos, videos: updatedVids });
+      // Async: Disparamos la señal a MongoDB por debajo sin frenar la UI
+      updateVideoRetag(video.uri, newMain, newSub, b);
       setRetagVideo(null);
   };
 
@@ -285,7 +293,7 @@ const Dashboard = ({ onLogout }) => {
      // 3. Nivel 3: Marcas (Brands)
      if (activeBrandFilter) {
          result = result.filter(dir => 
-            allCachedVideos.some(v => v._directorUri === dir.uri && v.subCategory === activeSubFilter && v.brand === activeBrandFilter)
+            allCachedVideos.some(v => v._directorUri === dir.uri && v.brand === activeBrandFilter)
          );
      }
 
@@ -302,6 +310,8 @@ const Dashboard = ({ onLogout }) => {
                  (
                     v.name?.toLowerCase().includes(term) || 
                     (v.brand && v.brand.toLowerCase().includes(term)) ||
+                    (v.category && v.category.toLowerCase().includes(term)) ||
+                    (v.subCategory && v.subCategory.toLowerCase().includes(term)) ||
                     (Array.isArray(v.tags) && v.tags.some(tag => tag?.name?.toLowerCase().includes(term) || (typeof tag === 'string' && tag.toLowerCase().includes(term))))
                  )
              );
@@ -330,10 +340,16 @@ const Dashboard = ({ onLogout }) => {
     if (activeSubFilter) {
         result = result.filter(v => v.subCategory === activeSubFilter);
     }
+    if (activeBrandFilter) {
+        result = result.filter(v => v.brand === activeBrandFilter);
+    }
     if (globalSearch && filterMode) {
         const term = globalSearch.toLowerCase();
         result = result.filter(v => 
             v.name?.toLowerCase().includes(term) || 
+            (v.brand && v.brand.toLowerCase().includes(term)) ||
+            (v.category && v.category.toLowerCase().includes(term)) ||
+            (v.subCategory && v.subCategory.toLowerCase().includes(term)) ||
             (Array.isArray(v.tags) && v.tags.some(tag => tag?.name?.toLowerCase().includes(term) || (typeof tag === 'string' && tag.toLowerCase().includes(term))))
         );
     }
@@ -373,13 +389,6 @@ const Dashboard = ({ onLogout }) => {
                     {pendingDirectorsList.length} pendientes
                 </span>
               </div>
-              <span 
-                onClick={async () => { const db = await import('../../services/db'); await db.clearDB(); window.location.reload(); }} 
-                style={{ color: 'var(--color-danger)', fontSize: '0.65rem', cursor: 'pointer', textDecoration: 'underline', marginLeft: 'auto' }}
-                title="Borra la base de datos si tienes videos clasificados con clasificaciones viejas"
-              >
-                [Purgar]
-              </span>
            </div>
         </div>
 

@@ -1,44 +1,26 @@
 // src/api/vimeo.js
+// OPINIONATED REWRITE: Proxy hacia el Backend Opcion B
 
-/**
- * Fetch all followed directors (users)
- * @param {string} token - Personal Access Token
- * @returns {Promise<Array>} Array of user objects
- */
+const API_URL = 'http://localhost:3000/api';
+
 export const getFollowedDirectors = async (token) => {
-  const response = await fetch('https://api.vimeo.com/me/following?per_page=100', {
-    headers: {
-      'Authorization': `bearer ${token}`,
-      'Accept': 'application/vnd.vimeo.*+json;version=3.4'
-    }
-  });
-
-  if (!response.ok) {
-    throw new Error(`Error fetching directors: ${response.statusText}`);
+  // Ignoramos el token del cliente. El backend lee su propio .env
+  const res = await fetch(`${API_URL}/vimeo/directors`);
+  
+  if (!res.ok) {
+    throw new Error(`Error fetching directors via backend`);
   }
-
-  const data = await response.json();
-  return data.data || [];
+  
+  return await res.json();
 };
 
-/**
- * Fetch latest videos from a specific director
- * @param {string} token - Personal Access Token
- * @param {string} directorUri - e.g. "/users/123456"
- * @returns {Promise<Array>} Array of video objects
- */
 export const getDirectorVideos = async (token, directorUri) => {
-  const response = await fetch(`https://api.vimeo.com${directorUri}/videos?per_page=20&sort=date&direction=desc`, {
-    headers: {
-      'Authorization': `bearer ${token}`,
-      'Accept': 'application/vnd.vimeo.*+json;version=3.4'
-    }
-  });
-
-  if (!response.ok) {
-    throw new Error(`Error fetching videos for ${directorUri}: ${response.statusText}`);
+  const res = await fetch(`${API_URL}/vimeo/videos?directorUri=${directorUri}`);
+  
+  if (!res.ok) {
+    throw new Error(`Error fetching videos via backend`);
   }
-
-  const data = await response.json();
+  
+  const data = await res.json();
   return data.data || [];
 };
