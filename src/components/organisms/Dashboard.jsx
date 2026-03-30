@@ -17,7 +17,7 @@ const SUB_CATEGORIES = {
 };
 
 const Dashboard = ({ onLogout }) => {
-  const { directors, videos, loadingDirectors, loadingVideos, classifying, error, fetchDirectors, fetchDirectorVideos, setVideos } = useApp();
+  const { directors, videos, loadingDirectors, loadingVideos, classifying, error, activeAIModel, fetchDirectors, fetchDirectorVideos, setVideos } = useApp();
   const [globalSearch, setGlobalSearch] = useState('');
   const [selectedDirector, setSelectedDirector] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState(null);
@@ -30,6 +30,15 @@ const Dashboard = ({ onLogout }) => {
   const [retagVideo, setRetagVideo] = useState(null);
   const [customTagInput, setCustomTagInput] = useState('');
   const [showMappedModal, setShowMappedModal] = useState(false);
+
+  // Dynamic model dot color logic
+  const isGemini = activeAIModel.includes('gemini');
+  const dotColorClass = isGemini 
+      ? 'linear-gradient(135deg, #00C9FF 0%, #92FE9D 100%)' 
+      : activeAIModel.includes('gpt') 
+           ? 'linear-gradient(135deg, #FF416C 0%, #FF4B2B 100%)' 
+           : 'linear-gradient(135deg, #7F7FD5 0%, #86A8E7 100%, #91EAE4 100%)';
+  const dotShadow = isGemini ? 'rgba(0,201,255,0.8)' : activeAIModel.includes('gpt') ? 'rgba(255, 65, 108, 0.8)' : 'rgba(127,127,213,0.8)';
 
   const mappedDirectorUris = useMemo(() => new Set(allCachedVideos.map(v => v._directorUri)), [allCachedVideos]);
   const pendingDirectorsList = useMemo(() => directors.filter(d => !mappedDirectorUris.has(d.uri)), [directors, mappedDirectorUris]);
@@ -375,8 +384,11 @@ const Dashboard = ({ onLogout }) => {
         }}>
            {/* Brand / Info */}
            <div className="glass-panel" style={{ padding: 'var(--space-sm) var(--space-md)', pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'linear-gradient(135deg, #00C9FF 0%, #92FE9D 100%)', boxShadow: '0 0 10px rgba(0,201,255,0.8)' }} />
+              <div 
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'help' }} 
+                  title={`Modelo AI en uso: ${activeAIModel}`}
+              >
+                <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: dotColorClass, boxShadow: `0 0 10px ${dotShadow}`, transition: 'all 0.5s ease' }} />
                 <h1 style={{ margin: 0, fontSize: '1.2rem', textShadow: '0 2px 10px rgba(0,0,0,0.5)', fontWeight: '800', letterSpacing: '0.5px' }}>Coloritos</h1>
               </div>
               <div style={{ height: '30px', width: '1px', background: 'var(--color-border)' }} />

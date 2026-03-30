@@ -14,6 +14,8 @@ export const useApp = () => {
   const [classifying, setClassifying] = useState(false);
   const [error, setError] = useState(null);
 
+  const [activeAIModel, setActiveAIModel] = useState('Esperando consulta...');
+
   const authenticate = () => {};
   const logout = () => {};
 
@@ -68,12 +70,15 @@ export const useApp = () => {
       
       if (unclassifiedVids.length > 0) {
           setClassifying(true);
-          // 3. Mandar al Backend Gemini Proxy
-          const newlyClassified = await classifyVideos(null, unclassifiedVids);
+          // 3. Mandar al Backend Gemini Proxy (con Fallback OpenAI)
+          const result = await classifyVideos(null, unclassifiedVids);
           
+          setActiveAIModel(result.activeModel); // Guardamos el modelo que se usó
+          const classificationData = result.data || [];
+
           // 4. Mergear de vuelta al estado visual sin mutar
           setVideos(prev => prev.map(old => {
-              const fresh = newlyClassified.find(n => n.uri === old.uri);
+              const fresh = classificationData.find(n => n.uri === old.uri);
               return fresh ? { ...old, ...fresh } : old;
           }));
       }
@@ -98,6 +103,7 @@ export const useApp = () => {
     loadingVideos,
     classifying,
     error,
+    activeAIModel,
     fetchDirectors,
     fetchDirectorVideos,
     setVideos

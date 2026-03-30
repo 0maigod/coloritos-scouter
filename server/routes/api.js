@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { GoogleGenAI } = require('@google/genai');
+const OpenAI = require('openai');
 
 const Director = require('../models/Director');
 const Video = require('../models/Video');
@@ -44,16 +45,34 @@ router.get('/vimeo/videos', async (req, res) => {
     if (!dirUri) return res.status(400).json({ error: "Missing directorUri" });
 
     try {
-        const response = await fetch(`https://api.vimeo.com${dirUri}/videos?per_page=20&sort=date&direction=desc`, {
-            headers: {
-                'Authorization': `bearer ${process.env.VIMEO_TOKEN}`,
-                'Accept': 'application/vnd.vimeo.*+json;version=3.4'
+        let allVideos = [];
+        let nextPageUrl = `https://api.vimeo.com${dirUri}/videos?per_page=100&sort=date&direction=desc`;
+        let loopCount = 0;
+
+        while (nextPageUrl && loopCount < 5) { // Límite de seguridad: máximo 500 videos (5 páginas)
+            const response = await fetch(nextPageUrl, {
+                headers: {
+                    'Authorization': `bearer ${process.env.VIMEO_TOKEN}`,
+                    'Accept': 'application/vnd.vimeo.*+json;version=3.4'
+                }
+            });
+            if (!response.ok) throw new Error(`Vimeo Error: ${response.statusText}`);
+            
+            const data = await response.json();
+            if (data.data) {
+                allVideos.push(...data.data);
             }
-        });
-        if (!response.ok) throw new Error(`Vimeo Error: ${response.statusText}`);
-        
-        const data = await response.json();
-        const vimeoVideos = data.data || [];
+
+            // Paginación de Vimeo: si hay más páginas, armamos la URL siguiente
+            if (data.paging && data.paging.next) {
+                nextPageUrl = `https://api.vimeo.com${data.paging.next}`;
+            } else {
+                nextPageUrl = null;
+            }
+            loopCount++;
+        }
+
+        const vimeoVideos = allVideos;
 
         // Check MongoDB para ver si ya tenemos clasificaciones para estos videos
         const enrichedVideos = [];
@@ -87,15 +106,14 @@ router.get('/vimeo/videos', async (req, res) => {
 
 
 // ==========================================
-// GEMINI AI PROXY ROUTE
+// AI CLASSIFICATION ROUTE (DUAL MODEL FAILOVER)
 // ==========================================
 
 router.post('/gemini/classify', async (req, res) => {
     const { videosArray } = req.body;
-    if (!videosArray || videosArray.length === 0) return res.json([]);
+    if (!videosArray || videosArray.length === 0) return res.json({ data: [], activeModel: 'none' });
 
     try {
-        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
         const promptData = videosArray.map(v => ({
             id: v.uri, // usamos uri ahora
             title: v.name,
@@ -117,31 +135,66 @@ Y además extrae la MARCA (ejemplo: "Nike", "Coca-Cola", "Ford", "L'Oréal").
 Si no consigues detectar la Marca anunciante, escribe "Indefinida".
 Si no coincide con ninguna mainCategory del árbol, usa mainCategory "Otro", subCategory "Varios".
 
+IMPORTANTE: Devuelve ÚNICAMENTE un Array JSON puramente válido sin formato markdown ni texto adicional.
+Cada elemento del array debe tener: "id", "mainCategory", "subCategory", "brand"
+
 Videos a procesar:
 ${JSON.stringify(promptData, null, 2)}`;
 
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: "ARRAY",
-                    items: {
-                        type: "OBJECT",
-                        properties: {
-                            id: { type: "STRING" },
-                            mainCategory: { type: "STRING" },
-                            subCategory: { type: "STRING" },
-                            brand: { type: "STRING" }
-                        },
-                        required: ["id", "mainCategory", "subCategory", "brand"]
+        let resultJSON = null;
+        let activeModelUsed = 'gemini-2.5-flash';
+
+        // 1. INTENTO PRINCIPAL: GEMINI 2.5 FLASH
+        try {
+            const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: prompt,
+                config: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "ARRAY",
+                        items: {
+                            type: "OBJECT",
+                            properties: {
+                                id: { type: "STRING" },
+                                mainCategory: { type: "STRING" },
+                                subCategory: { type: "STRING" },
+                                brand: { type: "STRING" }
+                            },
+                            required: ["id", "mainCategory", "subCategory", "brand"]
+                        }
                     }
                 }
+            });
+            resultJSON = JSON.parse(response.text);
+            console.log("-------------------------------------------------");
+            console.log("📌 GEMINI EJECUTÓ EL BATCH:", response.modelVersion || 'gemini-2.5-flash');
+            console.log("-------------------------------------------------");
+        } 
+        // 2. BACKUP / CONTINGENCIA: OPENAI GPT-4o-MINI
+        catch (geminiErr) {
+            console.warn("⚠️ Falló Gemini (Posible límite de cuota). Activando fallback a OpenAI GPT-4o-mini...", geminiErr.message);
+            activeModelUsed = 'gpt-4o-mini';
+            
+            if (!process.env.OPENAI_API_KEY) {
+                throw new Error("Gemini falló y no hay llave OPENAI_API_KEY para hacer el fallback de emergencia.");
             }
-        });
 
-        const resultJSON = JSON.parse(response.text);
+            const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+            const completion = await openai.chat.completions.create({
+                model: "gpt-4o-mini",
+                messages: [
+                    { role: "system", content: "You are a helpful JSON data classification system. Always respond with a strictly valid raw JSON array and absolutely nothing else." },
+                    { role: "user", content: prompt }
+                ]
+            });
+            
+            const rawOutput = completion.choices[0].message.content.trim();
+            // Limpiar posibles backticks si chatgpt se olvidó de la regla (ej: ```json [...] ```)
+            const cleanJSON = rawOutput.replace(/```json/gi, '').replace(/```/g, '').trim();
+            resultJSON = JSON.parse(cleanJSON);
+        }
 
         // Actualizamos o Creamos en MongoDB
         const updatedVideos = [];
@@ -176,10 +229,11 @@ ${JSON.stringify(promptData, null, 2)}`;
             });
         }
 
-        res.json(updatedVideos);
+        // Devolvemos ahora el objeto enriquecido
+        res.json({ data: updatedVideos, activeModel: activeModelUsed });
 
     } catch (e) {
-        console.error("Gemini Error:", e);
+        console.error("AI Classification Overall Error:", e);
         res.status(500).json({ error: e.message });
     }
 });

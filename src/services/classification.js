@@ -5,8 +5,8 @@
 const API_URL = import.meta.env.PROD ? '/api' : 'http://localhost:3000/api';
 
 export const classifyVideos = async (apiKey, videosArray) => {
-    if (!videosArray || videosArray.length === 0) return [];
-    
+    if (!videosArray || videosArray.length === 0) return { data: [], activeModel: 'Ninguno' };
+
     try {
         const response = await fetch(`${API_URL}/gemini/classify`, {
             method: 'POST',
@@ -20,12 +20,15 @@ export const classifyVideos = async (apiKey, videosArray) => {
             throw new Error(`Error Gemin proxy: ${response.statusText}`);
         }
 
-        // El backend nos devuelve un JSON exacto, validado y con Marcas, igualito al anterior.
+        // El backend nos devuelve un objeto: { data: arrayDeVideos, activeModel: 'gemini...' }
         return await response.json();
-        
-    } catch(e) {
+
+    } catch (e) {
         console.error("Error connecting to Gemini Proxy:", e);
         // Fallback robusto
-        return videosArray.map(v => ({...v, category: 'Sin Clasificar', subCategory: 'General', brand: 'Indefinida'}));
+        return {
+            data: videosArray.map(v => ({ ...v, category: 'Sin clasificar', subCategory: 'S/D', brand: 'Indefinida' })),
+            activeModel: 'Offline/Error'
+        };
     }
 }
