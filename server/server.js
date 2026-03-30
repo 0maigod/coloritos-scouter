@@ -1,10 +1,9 @@
+require('dotenv').config({ path: require('path').join(__dirname, '.env') })
 const express = require('express');
 const cors = require('cors');
-const dotenv = require('dotenv');
 const connectDB = require('./config/db');
 
-// Cargar variables secretas
-dotenv.config();
+
 
 // Auto-conectar a MongoDB
 connectDB();
@@ -28,7 +27,7 @@ app.use('/api', apiRoutes);
 app.use(express.static(path.join(__dirname, '../dist')));
 
 // Fallback: Cualquier ruta que no sea de la API, se la enviamos a React
-app.get('*', (req, res) => {
+app.get('/{*path}', (req, res) => {
     res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
 
