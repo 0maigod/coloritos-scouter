@@ -1,6 +1,6 @@
 # 🌌 Coloritos Scouter v2.0 (Fullstack Edition)
 
-**Coloritos Scouter** es una plataforma de scouting visual de próxima generación. Transforma tu base de datos de comerciales y videos de Vimeo en un universo 3D altamente interactivo, permitiendo descubrir, filtrar y re-clasificar directores y marcas usando Inteligencia Artificial (Gemini Pro).
+**Coloritos Scouter** es una plataforma de scouting visual de próxima generación. Transforma tu base de datos de comerciales y videos de Vimeo en un universo 3D altamente interactivo, permitiendo descubrir, filtrar y re-clasificar directores y marcas usando Inteligencia Artificial (Dual: Gemini Pro + OpenAI).
 
 En esta versión v2.0, el proyecto ha evolucionado de una SPA (Single Page Application) a una arquitectura **Cloud Client-Server**, introduciendo un backend en Node.js para proteger las API Keys y centralizar toda la inteligencia en MongoDB.
 
@@ -8,12 +8,12 @@ En esta versión v2.0, el proyecto ha evolucionado de una SPA (Single Page Appli
 
 ## ✨ Características Principales
 
-*   **Arquitectura BFF (Backend-for-Frontend):** Las API Keys de Vimeo y Gemini están blindadas dentro de un servidor Express.js (`/server`). El frontend de React jamás toca credenciales extranjeras.
-*   **Persistencia Centralizada (MongoDB Atlas):** Toda la taxonomía, directores y metadatos de clasificación se inmortalizan en la nube usando Mongoose, permitiendo sincronización en tiempo real entre múltiples dispositivos.
-*   **Universo 3D Espacial:** Navega por un cosmos dinámico (React Three Fiber) donde los directores de cine son estrellas centrales y sus dominios de trabajo orbitan a su alrededor.
-*   **Omnibox Taxonómico (D3):** Un buscador global interactivo y data-driven que cruza marcas, categorías, nombres y tags en tiempo real, conectando nodos mediante perfectas curvas Bezier.
-*   **Optimización de Tokens IA:** El servidor consulta inteligentemente a MongoDB antes de consumir tokens de la API de Google, procesando exclusivamente videos marcados como "Sin clasificar".
-*   **Retagging Glassmorphism:** Interfaz para anular las decisiones de la IA y re-clasificar videos manualmente. Estos cambios impactan la base de datos de MongoDB de forma instantánea y persistente.
+*   **Arquitectura BFF (Backend-for-Frontend):** Las API Keys de Vimeo, Gemini y OpenAI están blindadas dentro de un servidor Express.js (`/server`). El frontend de React jamás toca credenciales extranjeras.
+*   **Persistencia Centralizada Cache-First (MongoDB Atlas):** Toda la taxonomía, directores y metadatos de clasificación se inmortalizan en la nube usando Mongoose. Las lecturas de directores apuntan primero a la base de datos local (cargando en milisegundos) recurriendo a la API de Vimeo solo para sincronización manual o el primer descubrimiento.
+*   **Sistema Dual de IA Automático (Fallback):** Google Gemini procesa nativamente los nuevos descubrimientos usando *few-shot prompting*. Si los límites diarios de cuota de Gemini se agotan, el sistema conmuta automáticamente (sin intervención del usuario) al backend de **OpenAI (GPT-4o-mini)**, garantizando un uptime del 100%.
+*   **Performance Extrema UI (Infinite Scroll):** Interfaces optimizadas para directores con cientos de comerciales (lazy-loading por IntersectionObserver). Selecciones múltiples fluidas mediante shift-click tipo OS nativo y encabezados siempre flotantes.
+*   **Universo 3D Espacial Data-Driven:** Navega por un cosmos dinámico (React Three Fiber) donde los directores son estrellas y sus dominios de trabajo orbitan a su alrededor. Los nodos ahora reflejan metadatos en vivo (e.g. colores de alerta si hay videos pendientes de clasificar e indicadores numéricos de densidad de video por categoría).
+*   **Omnibox Taxonómico e Inteligencia Artificial:** Un buscador global interactivo y data-driven que cruza marcas, categorías y tags en tiempo real, permitiendo seleccionar y auto-clasificar baches enteros de video en 1-click.
 
 ---
 
@@ -22,7 +22,8 @@ En esta versión v2.0, el proyecto ha evolucionado de una SPA (Single Page Appli
 ### Fullstack Security Backend (`/server`)
 *   **Motor:** Node.js, Express.js.
 *   **Database:** MongoDB Atlas (Mongoose ORM).
-*   **Cognición IA:** `@google/genai` (Gemini Pro Vision).
+*   **Cognición IA Primaria:** `@google/genai` (Gemini Pro).
+*   **Cognición IA Fallback:** `openai` (GPT-4o-mini).
 
 ### Frontend UI (`/src`)
 *   **Framework:** React 18, Vite.
@@ -37,7 +38,7 @@ Como aplicación Fullstack, debes levantar ambos motores (Front y Back) en paral
 
 1. **Clona este repositorio:**
    ```bash
-   git clone https://github.com/TuUsuario/coloritos-scouter.git
+   git clone https://github.com/0maigod/coloritos-scouter.git
    cd coloritos-scouter
    ```
 
@@ -51,7 +52,8 @@ Como aplicación Fullstack, debes levantar ambos motores (Front y Back) en paral
    ```env
    MONGO_URI=mongodb+srv://.../coloritos?retryWrites=true&w=majority
    VIMEO_TOKEN=tu_token_secreto_de_vimeo
-   GEMINI_API_KEY=tu_token_secreto_de_gemini
+   GEMINI_API_KEY=tu_token_secreto_de_google
+   OPENAI_API_KEY=sk-tu_token_secreto_de_openai
    PORT=3000
    ```
 
