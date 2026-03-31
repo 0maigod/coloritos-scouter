@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import Tree from 'react-d3-tree';
 import Button from '../atoms/Button';
 import Input from '../atoms/Input';
@@ -17,10 +17,11 @@ const SUB_CATEGORIES = {
 };
 
 const Dashboard = ({ onLogout }) => {
-  const { directors, videos, loadingDirectors, loadingVideos, classifying, error, activeAIModel, fetchDirectors, fetchDirectorVideos, setVideos } = useApp();
+  const { directors, videos, loadingDirectors, loadingVideos, classifying, error, activeAIModel, fetchDirectors, fetchDirectorVideos, refreshDirectorVideos, setVideos, classifySelectedVideos } = useApp();
   const [globalSearch, setGlobalSearch] = useState('');
   const [selectedDirector, setSelectedDirector] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState(null);
+  const [selectedVideoIds, setSelectedVideoIds] = useState(new Set());
 
   const [filterMode, setFilterMode] = useState("Directores"); 
   const [activeSubFilter, setActiveSubFilter] = useState(null); 
@@ -30,6 +31,91 @@ const Dashboard = ({ onLogout }) => {
   const [retagVideo, setRetagVideo] = useState(null);
   const [customTagInput, setCustomTagInput] = useState('');
   const [showMappedModal, setShowMappedModal] = useState(false);
+
+  // Ref: last clicked index as anchor for shift-range selection (no re-render needed)
+  const lastClickedIndexRef = useRef(null);
+  // Ref: sentinel div for IntersectionObserver infinite scroll
+  const sentinelRef = useRef(null);
+
+  // ── Infinite scroll state ──────────────────────────────────
+  const PAGE_SIZE = 30;
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+
+  // Reset pagination whenever the director (or filters) change
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+    lastClickedIndexRef.current = null;
+  }, [selectedDirector?.uri, selectedCategory, filterMode, activeSubFilter, activeBrandFilter, globalSearch]);
+
+  // IntersectionObserver: when sentinel enters viewport, load next page
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setVisibleCount(prev => prev + PAGE_SIZE);
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  // Re-attach when visibleCount changes so we always observe the latest sentinel
+  }, [visibleCount]);
+
+  // Selection helpers
+  const toggleVideoSelection = (videoId, currentIndex, event) => {
+    // Shift+click: select the entire range between anchor and current
+    if (event?.shiftKey && lastClickedIndexRef.current !== null) {
+      const from = Math.min(lastClickedIndexRef.current, currentIndex);
+      const to   = Math.max(lastClickedIndexRef.current, currentIndex);
+      const rangeIds = filteredVideos.slice(from, to + 1).map(v => v.id);
+
+      setSelectedVideoIds(prev => {
+        const next = new Set(prev);
+        // If the anchor was selected, we ADD the range; otherwise REMOVE it
+        const anchorId = filteredVideos[lastClickedIndexRef.current]?.id;
+        if (anchorId && prev.has(anchorId)) {
+          rangeIds.forEach(id => next.add(id));
+        } else {
+          rangeIds.forEach(id => next.delete(id));
+        }
+        return next;
+      });
+      // Do NOT update lastClickedIndexRef on shift-click (anchor stays)
+      return;
+    }
+
+    // Normal click: toggle single video and update anchor
+    lastClickedIndexRef.current = currentIndex;
+    setSelectedVideoIds(prev => {
+      const next = new Set(prev);
+      if (next.has(videoId)) next.delete(videoId);
+      else next.add(videoId);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedVideoIds.size === filteredVideos.length && filteredVideos.length > 0) {
+      setSelectedVideoIds(new Set());
+      lastClickedIndexRef.current = null;
+    } else {
+      setSelectedVideoIds(new Set(filteredVideos.map(v => v.id)));
+      lastClickedIndexRef.current = null;
+    }
+  };
+
+  const handleClassifySelected = () => {
+    const videosToClassify = videos.filter(v => selectedVideoIds.has(v.id));
+    if (videosToClassify.length === 0) return;
+    classifySelectedVideos(videosToClassify);
+    setSelectedVideoIds(new Set());
+    lastClickedIndexRef.current = null;
+  };
 
   // Dynamic model dot color logic
   const isGemini = activeAIModel.includes('gemini');
@@ -366,6 +452,12 @@ const Dashboard = ({ onLogout }) => {
     return result;
   }, [videos, selectedCategory, filterMode, activeSubFilter, activeBrandFilter, globalSearch]);
 
+  // Only render what the user can see — the rest loads as they scroll
+  const visibleVideos = useMemo(
+    () => filteredVideos.slice(0, visibleCount),
+    [filteredVideos, visibleCount]
+  );
+
   return (
     <div className="dashboard-container" style={{ padding: 0, overflow: 'hidden' }}>
       <main style={{ flex: 1, position: 'relative', width: '100%', height: '100%' }}>
@@ -477,6 +569,7 @@ const Dashboard = ({ onLogout }) => {
             directors={filteredDirectors} 
             selectedDirector={selectedDirector} 
             videos={videos} // Pass videos so it knows the categories
+            allCachedVideos={allCachedVideos} // Pass cached videos for pending state coloring
             onDirectorClick={handleDirectorClick} 
             onCategorySelect={handleCategorySelect}
             onBackgroundClick={handleBackgroundClick}
@@ -490,42 +583,178 @@ const Dashboard = ({ onLogout }) => {
               width: '400px', 
               background: 'var(--color-bg-base)', 
               borderLeft: '1px solid var(--color-border)',
-              padding: 'var(--space-md)',
-              overflowY: 'auto',
               boxShadow: '-10px 0 30px rgba(0,0,0,0.5)',
-              zIndex: 90
+              zIndex: 90,
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden'
             }}>
             
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-                <h2 style={{ fontSize: '1.2rem', margin: 0, lineHeight: 1.2 }}>
-                    {loadingVideos || classifying ? 'Procesando...' : 
-                     <>{selectedCategory || (filterMode !== "Directores" ? activeSubFilter || filterMode : "Todos los videos")}<br/><span style={{fontSize: '0.8rem', color: 'var(--color-text-muted)'}}>{selectedDirector?.name} ({filteredVideos.length})</span></>}
-                </h2>
-                {selectedDirector && (
-                    <Button variant="danger" onClick={() => { setSelectedDirector(null); setSelectedCategory(null); }}>X</Button>
-                )}
+            {/* ── STICKY HEADER (outside scroll) ── */}
+            <div style={{
+              padding: 'var(--space-md)',
+              borderBottom: '1px solid var(--color-border)',
+              background: 'var(--color-bg-base)',
+              flexShrink: 0
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                  <h2 style={{ fontSize: '1.2rem', margin: 0, lineHeight: 1.2, flex: 1 }}>
+                      {loadingVideos || classifying ? 'Procesando...' : 
+                       <>{selectedCategory || (filterMode !== "Directores" ? activeSubFilter || filterMode : "Todos los videos")}<br/><span style={{fontSize: '0.8rem', color: 'var(--color-text-muted)'}}>{selectedDirector?.name} ({filteredVideos.length} videos)</span></> }
+                  </h2>
+
+                  {/* Classify selected button - only show when videos exist and not busy */}
+                  {!loadingVideos && !classifying && filteredVideos.length > 0 && (
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      {/* Select All toggle */}
+                      <button
+                        id="btn-select-all-videos"
+                        onClick={toggleSelectAll}
+                        title={selectedVideoIds.size === filteredVideos.length ? "Deseleccionar todos" : "Seleccionar todos"}
+                        style={{
+                          background: selectedVideoIds.size === filteredVideos.length ? 'var(--color-primary)' : 'rgba(255,255,255,0.08)',
+                          border: '1px solid var(--color-border)',
+                          color: 'white',
+                          borderRadius: '8px',
+                          padding: '5px 10px',
+                          fontSize: '0.7rem',
+                          cursor: 'pointer',
+                          fontWeight: 'bold',
+                          transition: 'all 0.2s',
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        {selectedVideoIds.size === filteredVideos.length && filteredVideos.length > 0 ? '✓ Todos' : `☐ Todos`}
+                      </button>
+
+                      {/* Classify selected */}
+                      {selectedVideoIds.size > 0 && (
+                        <button
+                          id="btn-classify-selected-videos"
+                          onClick={handleClassifySelected}
+                          title={`Clasificar con IA los ${selectedVideoIds.size} videos seleccionados`}
+                          style={{
+                            background: 'linear-gradient(135deg, #00C9FF 0%, #92FE9D 100%)',
+                            border: 'none',
+                            color: '#000',
+                            borderRadius: '8px',
+                            padding: '5px 8px',
+                            fontSize: '0.7rem',
+                            cursor: 'pointer',
+                            fontWeight: '800',
+                            transition: 'all 0.2s',
+                            whiteSpace: 'nowrap',
+                            boxShadow: '0 0 12px rgba(0,201,255,0.4)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                        >
+                          {/* Magic wand / AI classify icon */}
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 2L13.5 7.5L19 9L13.5 10.5L12 16L10.5 10.5L5 9L10.5 7.5L12 2Z" fill="currentColor"/>
+                            <path d="M19 14L19.75 16.25L22 17L19.75 17.75L19 20L18.25 17.75L16 17L18.25 16.25L19 14Z" fill="currentColor" opacity="0.7"/>
+                            <path d="M5 2L5.5 3.5L7 4L5.5 4.5L5 6L4.5 4.5L3 4L4.5 3.5L5 2Z" fill="currentColor" opacity="0.7"/>
+                          </svg>
+                          <span style={{ fontSize: '0.65rem', fontWeight: '900', lineHeight: 1 }}>
+                            {selectedVideoIds.size}
+                          </span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {selectedDirector && (
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      {/* Sync from Vimeo button */}
+                      {!loadingVideos && !classifying && (
+                        <button
+                          id="btn-sync-from-vimeo"
+                          onClick={() => refreshDirectorVideos(selectedDirector)}
+                          title="Sincronizar desde Vimeo (fuerza recarga ignorando cache)"
+                          style={{
+                            background: 'rgba(255,255,255,0.08)',
+                            border: '1px solid var(--color-border)',
+                            color: 'var(--color-text-muted)',
+                            borderRadius: '8px',
+                            padding: '5px 8px',
+                            fontSize: '0.85rem',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            lineHeight: 1
+                          }}
+                        >
+                          🔄
+                        </button>
+                      )}
+                      <Button variant="danger" onClick={() => { setSelectedDirector(null); setSelectedCategory(null); setSelectedVideoIds(new Set()); }}>X</Button>
+                    </div>
+                  )}
+              </div>
+
+              {/* Status messages stay in the fixed header zone */}
+              {loadingVideos && <p style={{ margin: '8px 0 0', fontSize: '0.85rem' }}>Descargando o leyendo de la DB local...</p>}
+              {classifying && <p style={{ margin: '8px 0 0', fontSize: '0.85rem', color: 'var(--color-primary)' }}>✨ Gemini está analizando nuevos videos...</p>}
             </div>
 
-            {loadingVideos && <p>Descargando o leyendo de la DB local...</p>}
-            {classifying && <p style={{ color: 'var(--color-primary)' }}>✨ Gemini está analizando nuevos videos...</p>}
-            
+            {/* ── SCROLLABLE CARDS BODY ── */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-md)' }}>
             {!loadingVideos && !classifying && filteredVideos.length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-                 {filteredVideos.map(video => (
-                   <a 
-                     key={video.id} 
-                     href={video.link} 
-                     target="_blank" 
-                     rel="noreferrer"
-                     className="glass-panel" 
-                     style={{ 
-                       padding: 0, display: 'flex', flexDirection: 'column', textDecoration: 'none', 
-                       color: 'inherit', overflow: 'hidden', transition: 'transform 0.2s',
+                 {visibleVideos.map((video, videoIndex) => {
+                   const isSelected = selectedVideoIds.has(video.id);
+                   return (
+                   <div
+                     key={video.id}
+                     className="glass-panel"
+                     style={{
+                       padding: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden',
+                       transition: 'transform 0.2s, box-shadow 0.2s',
+                       boxShadow: isSelected ? '0 0 0 2px var(--color-primary), 0 0 12px rgba(0,201,255,0.3)' : undefined,
+                       position: 'relative'
                      }}
                    >
-                     {video.thumbnail && (
-                       <img src={video.thumbnail} alt={video.name} style={{ width: '100%', height: '140px', objectFit: 'cover' }} />
-                     )}
+                     {/* Selection Checkbox Overlay */}
+                     <button
+                       id={`btn-select-video-${video.id?.split('/').pop()}`}
+                       onClick={(e) => { e.stopPropagation(); toggleVideoSelection(video.id, videoIndex, e); }}
+                       title={isSelected ? 'Deseleccionar' : 'Seleccionar para clasificar'}
+                       style={{
+                         position: 'absolute',
+                         top: '8px',
+                         right: '8px',
+                         zIndex: 10,
+                         width: '24px',
+                         height: '24px',
+                         borderRadius: '6px',
+                         background: isSelected ? 'var(--color-primary)' : 'rgba(0,0,0,0.55)',
+                         border: isSelected ? '2px solid var(--color-primary)' : '2px solid rgba(255,255,255,0.35)',
+                         color: 'white',
+                         fontSize: '0.75rem',
+                         display: 'flex',
+                         alignItems: 'center',
+                         justifyContent: 'center',
+                         cursor: 'pointer',
+                         transition: 'all 0.15s',
+                         backdropFilter: 'blur(4px)',
+                         fontWeight: 'bold'
+                       }}
+                     >
+                       {isSelected ? '✓' : ''}
+                     </button>
+
+                     {/* Video link area - clicking here opens Vimeo */}
+                     <a
+                       href={video.link}
+                       target="_blank"
+                       rel="noreferrer"
+                       style={{ textDecoration: 'none', color: 'inherit', display: 'flex', flexDirection: 'column' }}
+                     >
+                       {video.thumbnail && (
+                         <img src={video.thumbnail} alt={video.name} style={{ width: '100%', height: '140px', objectFit: 'cover' }} />
+                       )}
+                     </a>
+
                      <div style={{ padding: 'var(--space-sm)' }}>
                        <div style={{ display: 'flex', alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: '4px', gap: '4px', position: 'relative' }}>
                           <span 
@@ -600,12 +829,42 @@ const Dashboard = ({ onLogout }) => {
                          </div>
                        )}
 
-                       <h3 style={{ margin: 0, fontSize: '0.9rem', lineHeight: '1.3' }}>{video.name}</h3>
+                       <a href={video.link} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', color: 'inherit' }}>
+                         <h3 style={{ margin: 0, fontSize: '0.9rem', lineHeight: '1.3' }}>{video.name}</h3>
+                       </a>
                      </div>
-                   </a>
-                 ))}
+                   </div>
+                   );
+                 })}
               </div>
             )}
+
+            {/* Sentinel: IntersectionObserver triggers next page load */}
+            {!loadingVideos && !classifying && visibleCount < filteredVideos.length && (
+              <div
+                ref={sentinelRef}
+                style={{
+                  height: '60px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  color: 'var(--color-text-muted)',
+                  fontSize: '0.75rem'
+                }}
+              >
+                <span style={{
+                  width: '16px', height: '16px',
+                  border: '2px solid var(--color-border)',
+                  borderTopColor: 'var(--color-primary)',
+                  borderRadius: '50%',
+                  animation: 'spin 0.8s linear infinite',
+                  display: 'inline-block'
+                }} />
+                Cargando más... ({visibleCount} de {filteredVideos.length})
+              </div>
+            )}
+            </div>{/* ── end scrollable body ── */}
           </div>
         )}
       </main>

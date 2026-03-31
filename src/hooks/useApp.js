@@ -36,15 +36,15 @@ export const useApp = () => {
     }
   }, []);
 
-  const fetchDirectorVideos = useCallback(async (director) => {
+  const fetchDirectorVideos = useCallback(async (director, forceRefresh = false) => {
     setLoadingVideos(true);
     setClassifying(false);
     setError(null);
     setVideos([]); 
     
     try {
-      // 1. Llama al Backend (El cual mergea Vimeo con MongoDB)
-      const vids = await getDirectorVideos(null, director.uri);
+      // Cache-first by default. forceRefresh=true goes straight to Vimeo.
+      const { videos: vids, source } = await getDirectorVideos(null, director.uri, forceRefresh);
       
       const enhancedVids = vids.map(v => ({
            id: v.uri,
@@ -54,9 +54,9 @@ export const useApp = () => {
            description: v.description,
            tags: v.tags?.map(t => t.name).join(', ') || '',
            directorName: director.name,
-           thumbnail: v.pictures?.sizes?.[0]?.link || '',
+           thumbnail: v.thumbnail || v.pictures?.sizes?.[0]?.link || '',
            link: v.link,
-           // Estas 4 keys vienen inyectadas directamente de MongoDB gracias al Backend
+           // Classification fields from MongoDB (via cache or Vimeo enrichment)
            category: v.category || 'Sin clasificar',
            subCategory: v.subCategory || 'S/D',
            brand: v.brand || 'Indefinida',
@@ -64,30 +64,64 @@ export const useApp = () => {
       }));
       setVideos(enhancedVids);
       setLoadingVideos(false);
-      
-      // 2. Inteligencia Colectiva: Filtramos solo los que NO están en MongoDB
-      const unclassifiedVids = enhancedVids.filter(v => v.category === 'Sin clasificar' && !v.manualOverride);
-      
-      if (unclassifiedVids.length > 0) {
-          setClassifying(true);
-          // 3. Mandar al Backend Gemini Proxy (con Fallback OpenAI)
-          const result = await classifyVideos(null, unclassifiedVids);
-          
-          setActiveAIModel(result.activeModel); // Guardamos el modelo que se usó
-          const classificationData = result.data || [];
 
-          // 4. Mergear de vuelta al estado visual sin mutar
-          setVideos(prev => prev.map(old => {
-              const fresh = classificationData.find(n => n.uri === old.uri);
-              return fresh ? { ...old, ...fresh } : old;
-          }));
+      if (source === 'cache') {
+        console.log(`⚡ ${enhancedVids.length} videos from cache for ${director.name}`);
       }
+
+      // Classify untagged videos regardless of source (cache may have pending videos too)
+      const unclassifiedVids = enhancedVids.filter(v => v.category === 'Sin clasificar' && !v.manualOverride);
+
+      if (unclassifiedVids.length === 0) {
+        // All tagged — nothing to do
+        return;
+      }
+
+      setClassifying(true);
+      const result = await classifyVideos(null, unclassifiedVids);
+
+      setActiveAIModel(result.activeModel);
+      const classificationData = result.data || [];
+
+      setVideos(prev => prev.map(old => {
+          const fresh = classificationData.find(n => n.uri === old.uri);
+          return fresh ? { ...old, ...fresh } : old;
+      }));
 
     } catch (err) {
       console.error(err);
       setError(err.message || 'Error parsing backend videos');
     } finally {
       setLoadingVideos(false);
+      setClassifying(false);
+    }
+  }, []);
+
+  // Explicitly sync from Vimeo, bypassing cache
+  const refreshDirectorVideos = useCallback((director) => {
+    return fetchDirectorVideos(director, true);
+  }, [fetchDirectorVideos]);
+
+  const classifySelectedVideos = useCallback(async (videosToClassify) => {
+    if (!videosToClassify || videosToClassify.length === 0) return;
+    setClassifying(true);
+    setError(null);
+
+    try {
+      const result = await classifyVideos(null, videosToClassify);
+
+      setActiveAIModel(result.activeModel);
+      const classificationData = result.data || [];
+
+      // Merge the fresh classification back into the global videos state without mutation
+      setVideos(prev => prev.map(old => {
+        const fresh = classificationData.find(n => n.uri === old.uri);
+        return fresh ? { ...old, ...fresh } : old;
+      }));
+    } catch (err) {
+      console.error(err);
+      setError(err.message || 'Error clasificando videos seleccionados');
+    } finally {
       setClassifying(false);
     }
   }, []);
@@ -106,6 +140,8 @@ export const useApp = () => {
     activeAIModel,
     fetchDirectors,
     fetchDirectorVideos,
-    setVideos
+    refreshDirectorVideos,
+    setVideos,
+    classifySelectedVideos
   };
 };

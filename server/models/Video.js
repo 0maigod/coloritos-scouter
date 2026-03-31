@@ -10,7 +10,8 @@ const videoSchema = new mongoose.Schema({
     description: String,
     link: String,
     duration: Number,
-    pictures: mongoose.Schema.Types.Mixed,       // Array de miniaturas nativo de Vimeo
+    thumbnail: String,                           // URL directa de la miniatura (más confiable que navegar pictures.sizes)
+    pictures: mongoose.Schema.Types.Mixed,       // Estructura original de Vimeo (backup completo)
     player_embed_url: String,                    // El iframe
     
     // Relación al director (usamos el uri único del director en lugar de un ObjectId para más fácil mapeo)

@@ -4,23 +4,16 @@
 const API_URL = import.meta.env.PROD ? '/api' : 'http://localhost:3000/api';
 
 export const getFollowedDirectors = async (token) => {
-  // Ignoramos el token del cliente. El backend lee su propio .env
   const res = await fetch(`${API_URL}/vimeo/directors`);
-  
-  if (!res.ok) {
-    throw new Error(`Error fetching directors via backend`);
-  }
-  
+  if (!res.ok) throw new Error(`Error fetching directors via backend`);
   return await res.json();
 };
 
-export const getDirectorVideos = async (token, directorUri) => {
-  const res = await fetch(`${API_URL}/vimeo/videos?directorUri=${directorUri}`);
-  
-  if (!res.ok) {
-    throw new Error(`Error fetching videos via backend`);
-  }
-  
+export const getDirectorVideos = async (token, directorUri, forceRefresh = false) => {
+  const url = `${API_URL}/vimeo/videos?directorUri=${directorUri}${forceRefresh ? '&refresh=true' : ''}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Error fetching videos via backend`);
   const data = await res.json();
-  return data.data || [];
+  // Return both the videos array and the source so callers know if it was cache or Vimeo
+  return { videos: data.data || [], source: data.source || 'vimeo' };
 };

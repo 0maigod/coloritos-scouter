@@ -31,21 +31,28 @@ const getFibonacciSpherePoints = (samples, radius = 5) => {
   return points;
 };
 
-const Node = ({ dir, pos, isSelected, isDimmed, onClick }) => {
+const Node = ({ dir, pos, isSelected, isDimmed, hasPendingVideos, onClick }) => {
   const totalVideos = dir.metadata?.connections?.videos?.total || 0;
   // Use log base 10 to gracefully scale extreme differences (e.g. 10 vs 5000)
   const logFactor = Math.log10(totalVideos + 1);
   const sphereSize = (isSelected ? 0.35 : 0.12) * (0.8 + logFactor * 0.25);
   const fontSize = isSelected ? Math.max(16, Math.round(10 + logFactor * 3)) : Math.round(8 + logFactor * 3);
 
+  // Color palette: selected=blue, pending=amber, done=white
+  const sphereColor   = isSelected ? "#3b82f6" : hasPendingVideos ? "#f97316" : "#ffffff";
+  const emissiveColor = isSelected ? "#1d4ed8" : hasPendingVideos ? "#c2410c" : "#ffffff";
+  const emissiveInt   = isSelected ? 0.5       : hasPendingVideos ? 0.35      : 0.4;
+  const labelBorder   = isSelected ? 'var(--color-primary)' : hasPendingVideos ? 'rgba(249,115,22,0.5)' : 'rgba(255,255,255,0.1)';
+  const labelBg       = isSelected ? 'var(--color-primary)' : hasPendingVideos ? 'rgba(249,115,22,0.15)' : 'rgba(15, 17, 21, 0.7)';
+
   return (
     <group position={[pos.x, pos.y, pos.z]}>
       <mesh onPointerDown={(e) => { e.stopPropagation(); onClick(dir); }}>
         <sphereGeometry args={[sphereSize, 32, 32]} />
         <meshStandardMaterial 
-          color={isSelected ? "#3b82f6" : "#ffffff"} 
-          emissive={isSelected ? "#1d4ed8" : "#ffffff"} 
-          emissiveIntensity={isSelected ? 0.5 : 0.4} 
+          color={sphereColor} 
+          emissive={emissiveColor} 
+          emissiveIntensity={emissiveInt} 
           roughness={0.2} 
         />
       </mesh>
@@ -56,11 +63,11 @@ const Node = ({ dir, pos, isSelected, isDimmed, onClick }) => {
             onPointerDown={(e) => { e.stopPropagation(); onClick(dir); }}
             style={{
               cursor: 'pointer',
-              background: isSelected ? 'var(--color-primary)' : 'rgba(15, 17, 21, 0.7)',
+              background: labelBg,
               padding: `${isSelected ? 6 : Math.round(3 + logFactor)}px ${Math.round(8 + logFactor * 2)}px`,
               borderRadius: '12px',
-              border: `1px solid ${isSelected ? 'var(--color-primary)' : 'rgba(255,255,255,0.1)'}`,
-              color: 'white',
+              border: `1px solid ${labelBorder}`,
+              color: hasPendingVideos && !isSelected ? '#fdba74' : 'white',
               fontSize: `${fontSize}px`,
               fontWeight: isSelected ? 'bold' : 'normal',
               whiteSpace: 'nowrap',
@@ -70,7 +77,7 @@ const Node = ({ dir, pos, isSelected, isDimmed, onClick }) => {
               backdropFilter: 'blur(4px)'
             }}
           >
-            {dir.name}
+            {dir.name}{hasPendingVideos && !isSelected ? ' ·' : ''}
           </div>
         </Html>
       )}
@@ -78,7 +85,7 @@ const Node = ({ dir, pos, isSelected, isDimmed, onClick }) => {
   );
 }
 
-const CategoryNode = ({ category, pos, onClick }) => {
+const CategoryNode = ({ category, count, pos, onClick }) => {
     return (
         <group position={[pos.x, pos.y, pos.z]}>
             <mesh onPointerDown={(e) => { e.stopPropagation(); onClick(category); }}>
@@ -96,16 +103,24 @@ const CategoryNode = ({ category, pos, onClick }) => {
                         color: 'white',
                         fontSize: '9px',
                         whiteSpace: 'nowrap',
-                        pointerEvents: 'auto'
+                        pointerEvents: 'auto',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '5px'
                      }}>
-                    {category}
+                    <span>{category}</span>
+                    {count != null && (
+                      <span style={{ fontWeight: '900', color: '#93c5fd', fontSize: '10px' }}>
+                        {count}
+                      </span>
+                    )}
                 </div>
             </Html>
         </group>
     )
 }
 
-const Scene = ({ directors, selectedDirector, videos, onDirectorClick, onCategorySelect }) => {
+const Scene = ({ directors, selectedDirector, videos, allCachedVideos, onDirectorClick, onCategorySelect }) => {
   const [expanded, setExpanded] = useState(true);
   
   // Base radius for directors expands slightly if there are many
@@ -114,6 +129,26 @@ const Scene = ({ directors, selectedDirector, videos, onDirectorClick, onCategor
   
   const uniqueCategories = useMemo(() => [...new Set(videos.map(v => v.category))].filter(Boolean), [videos]);
   const catPoints = useMemo(() => getFibonacciSpherePoints(uniqueCategories.length, 3), [uniqueCategories.length]);
+
+  // Count videos per category for the selected director
+  const categoryCounts = useMemo(() => {
+    const map = {};
+    videos.forEach(v => {
+      if (v.category) map[v.category] = (map[v.category] || 0) + 1;
+    });
+    return map;
+  }, [videos]);
+
+  // Compute which director URIs have at least one unclassified cached video
+  const pendingDirectorUriSet = useMemo(() => {
+    const s = new Set();
+    allCachedVideos?.forEach(v => {
+      if (v.category === 'Sin clasificar' || v.category === 'Otro' || !v.category) {
+        if (v._directorUri) s.add(v._directorUri);
+      }
+    });
+    return s;
+  }, [allCachedVideos]);
 
   const selectedIndex = directors.findIndex(d => d.uri === selectedDirector?.uri);
   const selectedPos = selectedIndex >= 0 ? points[selectedIndex] : null;
@@ -150,13 +185,14 @@ const Scene = ({ directors, selectedDirector, videos, onDirectorClick, onCategor
          const pos = points[i];
          const isSelected = selectedDirector?.uri === dir.uri;
          const isDimmed = selectedDirector && !isSelected;
+         const hasPendingVideos = pendingDirectorUriSet.has(dir.uri);
 
          return (
            <group key={dir.uri}>
              {/* The cord/line connecting center to node */}
              <Line
                points={[[0,0,0], [pos.x, pos.y, pos.z]]}
-               color={isSelected ? "#3b82f6" : "#ffffff"}
+               color={isSelected ? "#3b82f6" : hasPendingVideos ? "#f97316" : "#ffffff"}
                lineWidth={isSelected ? 2 : 1}
                transparent
                opacity={isDimmed ? 0.05 : (isSelected ? 0.8 : 0.15)}
@@ -166,7 +202,8 @@ const Scene = ({ directors, selectedDirector, videos, onDirectorClick, onCategor
                 dir={dir} 
                 pos={pos} 
                 isSelected={isSelected} 
-                isDimmed={isDimmed} 
+                isDimmed={isDimmed}
+                hasPendingVideos={hasPendingVideos}
                 onClick={onDirectorClick} 
              />
              
@@ -184,7 +221,7 @@ const Scene = ({ directors, selectedDirector, videos, onDirectorClick, onCategor
                           transparent
                           opacity={0.5}
                         />
-                        <CategoryNode category={cat} pos={absPos} onClick={onCategorySelect} />
+                        <CategoryNode category={cat} count={categoryCounts[cat]} pos={absPos} onClick={onCategorySelect} />
                      </group>
                  )
              })}
