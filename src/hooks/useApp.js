@@ -24,14 +24,25 @@ export const useApp = () => {
     setLoadingDirectors(true);
     
     try {
-      // 1. Llama al Backend (El cual hace proxy hacia Vimeo)
-      const dirs = await getFollowedDirectors(null);
-      setDirectors(dirs);
+      // 1. Llama al Backend (Intentará servir desde caché primero)
+      const cached = await getFollowedDirectors(null, false);
+      setDirectors(cached.data || []);
+      setLoadingDirectors(false); // Detenemos el loader de inmediato
+      
+      // 2. Si vino de caché, disparamos actualización en segundo plano a Vimeo
+      if (cached.source === 'cache') {
+        getFollowedDirectors(null, true).then(fresh => {
+          // Si la cantidad cambia (alguno insertado o borrado), actualizamos vista simple
+          // O si queremos podemos actualizar siempre por si cambiaron fotos o links
+          if (fresh.data && fresh.data.length !== (cached.data || []).length) {
+              setDirectors(fresh.data);
+          }
+        }).catch(err => console.error("Error background sync directors:", err));
+      }
       
     } catch (err) {
       console.error(err);
       setError(err.message);
-    } finally {
       setLoadingDirectors(false);
     }
   }, []);

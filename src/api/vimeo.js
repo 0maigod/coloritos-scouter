@@ -3,10 +3,13 @@
 
 const API_URL = import.meta.env.PROD ? '/api' : 'http://localhost:3000/api';
 
-export const getFollowedDirectors = async (token) => {
-  const res = await fetch(`${API_URL}/vimeo/directors`);
+export const getFollowedDirectors = async (token, forceSync = false) => {
+  const url = `${API_URL}/vimeo/directors${forceSync ? '?sync=true' : ''}`;
+  const res = await fetch(url);
   if (!res.ok) throw new Error(`Error fetching directors via backend`);
-  return await res.json();
+  const data = await res.json();
+  // We expect { source: '...', data: [...] } format from the backend
+  return data;
 };
 
 export const getDirectorVideos = async (token, directorUri, forceRefresh = false) => {

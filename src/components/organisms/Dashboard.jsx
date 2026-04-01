@@ -47,25 +47,6 @@ const Dashboard = ({ onLogout }) => {
     lastClickedIndexRef.current = null;
   }, [selectedDirector?.uri, selectedCategory, filterMode, activeSubFilter, activeBrandFilter, globalSearch]);
 
-  // IntersectionObserver: when sentinel enters viewport, load next page
-  useEffect(() => {
-    const sentinel = sentinelRef.current;
-    if (!sentinel) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          setVisibleCount(prev => prev + PAGE_SIZE);
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  // Re-attach when visibleCount changes so we always observe the latest sentinel
-  }, [visibleCount]);
-
   // Selection helpers
   const toggleVideoSelection = (videoId, currentIndex, event) => {
     // Shift+click: select the entire range between anchor and current
@@ -698,7 +679,15 @@ const Dashboard = ({ onLogout }) => {
             </div>
 
             {/* ── SCROLLABLE CARDS BODY ── */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-md)' }}>
+            <div 
+               style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-md)' }}
+               onScroll={(e) => {
+                  const bottom = e.currentTarget.scrollHeight - e.currentTarget.scrollTop <= e.currentTarget.clientHeight + 100;
+                  if (bottom && visibleCount < filteredVideos.length) {
+                     setVisibleCount(prev => prev + PAGE_SIZE);
+                  }
+               }}
+            >
             {!loadingVideos && !classifying && filteredVideos.length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
                  {visibleVideos.map((video, videoIndex) => {
@@ -839,10 +828,9 @@ const Dashboard = ({ onLogout }) => {
               </div>
             )}
 
-            {/* Sentinel: IntersectionObserver triggers next page load */}
+            {/* Sentinel: Scroll indicator triggers next page load naturally via div onScroll */}
             {!loadingVideos && !classifying && visibleCount < filteredVideos.length && (
               <div
-                ref={sentinelRef}
                 style={{
                   height: '60px',
                   display: 'flex',

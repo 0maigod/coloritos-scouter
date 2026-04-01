@@ -13,7 +13,8 @@ const PORT = process.env.PORT || 3000;
 
 // Middlewares
 app.use(cors()); // Permite peticiones del frontend (localhost:5173)
-app.use(express.json()); // Parsea JSON bodies
+app.use(express.json({ limit: '50mb' })); // Parsea JSON bodies mucho más pesados (para el batch a Gemini)
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Importar rutas
 const apiRoutes = require('./routes/api');

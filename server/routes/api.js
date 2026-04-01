@@ -11,28 +11,54 @@ const Video = require('../models/Video');
 // ==========================================
 
 router.get('/vimeo/directors', async (req, res) => {
-    try {
-        const response = await fetch('https://api.vimeo.com/me/following?per_page=100', {
-            headers: {
-                'Authorization': `bearer ${process.env.VIMEO_TOKEN}`,
-                'Accept': 'application/vnd.vimeo.*+json;version=3.4'
-            }
-        });
-        if (!response.ok) throw new Error(`Vimeo Error: ${response.statusText}`);
-        
-        const data = await response.json();
-        const directors = data.data || [];
+    const sync = req.query.sync === 'true';
 
-        // Opcional: Upsert silencioso en MongoDB
-        for (let d of directors) {
+    try {
+        // 1. Intentar responder desde caché ràpidamente
+        if (!sync) {
+            const cachedDirectors = await Director.find({}).sort({ name: 1 }).lean();
+            if (cachedDirectors.length > 0) {
+                console.log(`⚡ Cache hit: ${cachedDirectors.length} directores desde MongoDB`);
+                return res.json({ source: 'cache', data: cachedDirectors });
+            }
+        }
+
+        // 2. Traer desde Vimeo
+        console.log(`🌐 Buscando directores de Vimeo...`);
+        let allDirectors = [];
+        let nextPageUrl = 'https://api.vimeo.com/me/following?per_page=100&sort=alphabetical';
+        let loopCount = 0;
+
+        while (nextPageUrl && loopCount < 5) {
+            const response = await fetch(nextPageUrl, {
+                headers: {
+                    'Authorization': `bearer ${process.env.VIMEO_TOKEN}`,
+                    'Accept': 'application/vnd.vimeo.*+json;version=3.4'
+                }
+            });
+            if (!response.ok) throw new Error(`Vimeo Error: ${response.statusText}`);
+            
+            const data = await response.json();
+            if (data.data) allDirectors.push(...data.data);
+
+            nextPageUrl = (data.paging?.next) ? `https://api.vimeo.com${data.paging.next}` : null;
+            loopCount++;
+        }
+
+        // Sincronizar silencioso en MongoDB
+        for (let d of allDirectors) {
             await Director.findOneAndUpdate(
                 { uri: d.uri },
                 { name: d.name, link: d.link, pictures: d.pictures },
-                { upsert: true, new: true }
+                { upsert: true }
             );
         }
 
-        res.json(directors);
+        // Eliminar directores antiguos que ya no seguimos
+        const vimeoUris = allDirectors.map(d => d.uri);
+        await Director.deleteMany({ uri: { $nin: vimeoUris } });
+
+        res.json({ source: 'vimeo', data: allDirectors });
     } catch (e) {
         console.error(e);
         res.status(500).json({ error: e.message });
