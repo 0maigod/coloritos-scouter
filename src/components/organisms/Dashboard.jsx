@@ -5,6 +5,7 @@ import Input from '../atoms/Input';
 import { useApp } from '../../hooks/useApp';
 import DirectorGraph from './DirectorGraph';
 import { getAllCachedVideos, updateVideoRetag } from '../../services/db';
+import VideoModal from './VideoModal';
 
 const MAIN_CATEGORIES = ["Directores", "Alimentos y Bebidas", "Moda y Belleza", "Movilidad", "Servicios y Tecnología", "Arte y Entretenimiento", "Otro"];
 const SUB_CATEGORIES = {
@@ -22,6 +23,7 @@ const Dashboard = ({ onLogout }) => {
   const [selectedDirector, setSelectedDirector] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [selectedVideoIds, setSelectedVideoIds] = useState(new Set());
+  const [visitedDirectors, setVisitedDirectors] = useState({});
 
   const [filterMode, setFilterMode] = useState("Directores"); 
   const [activeSubFilter, setActiveSubFilter] = useState(null); 
@@ -31,6 +33,10 @@ const Dashboard = ({ onLogout }) => {
   const [retagVideo, setRetagVideo] = useState(null);
   const [customTagInput, setCustomTagInput] = useState('');
   const [showMappedModal, setShowMappedModal] = useState(false);
+  const [playingVideo, setPlayingVideo] = useState(null);
+  
+  const [favoritedVideos, setFavoritedVideos] = useState([]);
+  const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(false);
 
   // Ref: last clicked index as anchor for shift-range selection (no re-render needed)
   const lastClickedIndexRef = useRef(null);
@@ -329,6 +335,7 @@ const Dashboard = ({ onLogout }) => {
         return;
     }
     
+    setVisitedDirectors(prev => ({ ...prev, [director.uri]: (prev[director.uri] || 0) + 1 }));
     setSelectedDirector(director);
     setSelectedCategory(null);
     fetchDirectorVideos(director);
@@ -456,24 +463,45 @@ const Dashboard = ({ onLogout }) => {
           pointerEvents: 'none' // allow clicks to pass through to canvas
         }}>
            {/* Brand / Info */}
-           <div className="glass-panel" style={{ padding: 'var(--space-sm) var(--space-md)', pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
-              <div 
-                  style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'help' }} 
-                  title={`Modelo AI en uso: ${activeAIModel}`}
-              >
-                <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: dotColorClass, boxShadow: `0 0 10px ${dotShadow}`, transition: 'all 0.5s ease' }} />
-                <h1 style={{ margin: 0, fontSize: '1.2rem', textShadow: '0 2px 10px rgba(0,0,0,0.5)', fontWeight: '800', letterSpacing: '0.5px' }}>Coloritos</h1>
-              </div>
-              <div style={{ height: '30px', width: '1px', background: 'var(--color-border)' }} />
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <span style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem', fontWeight: '600' }}>{directors.length} en Vimeo</span>
-                <span 
-                    onClick={() => setShowMappedModal(true)}
-                    style={{ color: 'var(--color-danger)', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 'bold', textShadow: '0 0 8px rgba(255,0,0,0.3)' }}
-                >
-                    {pendingDirectorsList.length} pendientes
-                </span>
-              </div>
+           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', pointerEvents: 'auto' }}>
+               <div className="glass-panel" style={{ padding: 'var(--space-sm) var(--space-md)', display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
+                  <div 
+                      style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'help' }} 
+                      title={`Modelo AI en uso: ${activeAIModel}`}
+                  >
+                    <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: dotColorClass, boxShadow: `0 0 10px ${dotShadow}`, transition: 'all 0.5s ease' }} />
+                    <h1 style={{ margin: 0, fontSize: '1.2rem', textShadow: '0 2px 10px rgba(0,0,0,0.5)', fontWeight: '800', letterSpacing: '0.5px' }}>Coloritos</h1>
+                  </div>
+                  <div style={{ height: '30px', width: '1px', background: 'var(--color-border)' }} />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <span style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem', fontWeight: '600' }}>{directors.length} en Vimeo</span>
+                    <span 
+                        onClick={() => setShowMappedModal(true)}
+                        style={{ color: 'var(--color-danger)', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 'bold', textShadow: '0 0 8px rgba(255,0,0,0.3)' }}
+                    >
+                        {pendingDirectorsList.length} pendientes
+                    </span>
+                  </div>
+               </div>
+               
+               <button 
+                  onClick={() => setIsLeftPanelOpen(true)} 
+                  className="glass-panel" 
+                  style={{ 
+                     padding: 'var(--space-xs) var(--space-sm)', display: 'flex', alignItems: 'center', gap: '8px',
+                     cursor: 'pointer', border: '1px solid rgba(255,255,255,0.15)', color: 'white',
+                     width: 'fit-content', alignSelf: 'flex-start',
+                     background: 'rgba(0, 0, 0, 0.5)', transition: 'all 0.2s',
+                     backgroundClip: 'padding-box',
+                     textShadow: '0 2px 4px rgba(0,0,0,0.5)', fontWeight: '800', letterSpacing: '0.5px'
+                  }}
+                  onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+                  onMouseOut={e => e.currentTarget.style.background = 'rgba(0, 0, 0, 0.5)'}
+               >
+                  <span style={{ color: 'gold', textShadow: '0 0 8px rgba(255,215,0,0.8)', fontSize: '0.9rem', lineHeight: 1, filter: 'drop-shadow(0 0 4px rgba(255,215,0,0.6))' }}>★</span>
+                  <span style={{ fontSize: '0.9rem' }}>Mi_Lista</span>
+                  <span style={{ color: 'var(--color-primary)', fontSize: '0.7rem' }}>({favoritedVideos.length})</span>
+               </button>
            </div>
         </div>
 
@@ -543,7 +571,25 @@ const Dashboard = ({ onLogout }) => {
         )}
 
         {loadingDirectors && <div className="glass-panel" style={{ position: 'absolute', top: 100, left: 'var(--space-md)', zIndex: 100 }}>Cargando directores...</div>}
-        {error && <div className="glass-panel" style={{ position: 'absolute', top: 100, left: 'var(--space-md)', color: 'var(--color-danger)', border: '1px solid var(--color-danger)', zIndex: 100 }}>Error: {error}</div>}
+        {error && (
+            (error.toLowerCase().includes('cuota') || error.toLowerCase().includes('saldo') || error.toLowerCase().includes('rate limit') || error.toLowerCase().includes('openai'))
+            ? (
+                <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(255,0,0,0.1)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'var(--space-md)', animation: 'fadeInOverlay 0.3s forwards' }}>
+                    <div className="glass-panel" style={{ width: '450px', border: '1px solid var(--color-danger)', textAlign: 'center', padding: 'var(--space-lg)', boxShadow: '0 20px 50px rgba(255,0,0,0.2)' }}>
+                        <div style={{ fontSize: '3rem', marginBottom: '16px' }}>💳</div>
+                        <h2 style={{ color: 'var(--color-danger)', margin: '0 0 16px 0', textShadow: '0 0 10px rgba(255,0,0,0.5)' }}>Saldos de IA Agotados</h2>
+                        <p style={{ color: 'white', fontSize: '0.95rem', lineHeight: '1.4' }}>{error}</p>
+                        <p style={{ color: 'var(--color-text-muted)', fontSize: '0.8rem', marginTop: '16px' }}>Los videos seguirán funcionando desde caché, pero no se auto-clasificarán los nuevos hasta que resuelvas el saldo.</p>
+                        <Button variant="danger" onClick={() => window.location.reload()} style={{ marginTop: '24px', width: '100%', padding: '12px', fontSize: '1rem', fontWeight: 'bold' }}>Cerrar y Continuar</Button>
+                    </div>
+                </div>
+            )
+            : (
+                <div className="glass-panel" style={{ position: 'absolute', top: 100, left: 'var(--space-md)', color: 'var(--color-danger)', border: '1px solid var(--color-danger)', zIndex: 100, animation: 'slideRight 0.3s forwards' }}>
+                    <strong>Aviso:</strong> {error}
+                </div>
+            )
+        )}
         
         {/* Full screen Graph View. It handles its own dimming and subnodes */}
         <DirectorGraph 
@@ -551,10 +597,87 @@ const Dashboard = ({ onLogout }) => {
             selectedDirector={selectedDirector} 
             videos={videos} // Pass videos so it knows the categories
             allCachedVideos={allCachedVideos} // Pass cached videos for pending state coloring
+            visitedMap={visitedDirectors} // Track session visits
             onDirectorClick={handleDirectorClick} 
             onCategorySelect={handleCategorySelect}
             onBackgroundClick={handleBackgroundClick}
         />
+
+        {/* Favorited Videos Left Panel */}
+        {isLeftPanelOpen && (
+          <div style={{ 
+              position: 'absolute', left: 0, top: 0, bottom: 0, width: '380px', 
+              background: 'var(--color-bg-base)', borderRight: '1px solid var(--color-border)',
+              boxShadow: '10px 0 30px rgba(0,0,0,0.5)', zIndex: 105,
+              display: 'flex', flexDirection: 'column', overflow: 'hidden'
+            }}>
+            <div style={{ padding: 'var(--space-md)', borderBottom: '1px solid var(--color-border)', flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+               <h2 style={{ fontSize: '1.2rem', margin: 0, color: 'white', display: 'flex', alignItems: 'center', gap: '8px', textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>
+                   <span style={{ color: 'gold', textShadow: '0 0 8px rgba(255,215,0,0.8)', fontSize: '1.3rem', lineHeight: 1, filter: 'drop-shadow(0 0 4px rgba(255,215,0,0.6))' }}>★</span>
+                   Mi_Lista
+               </h2>
+               <Button variant="danger" onClick={() => setIsLeftPanelOpen(false)}>X</Button>
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-md)' }}>
+               {favoritedVideos.length === 0 ? <p style={{ color: 'var(--color-text-muted)', textAlign: 'center', marginTop: '40px' }}>No hay videos en tu lista.</p> : (
+                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
+                    {favoritedVideos.map(video => (
+                      <div key={video.id} className="glass-panel" style={{ padding: 0, display: 'flex', flexDirection: 'row', overflow: 'hidden', alignItems: 'stretch', position: 'relative' }}>
+                         <a href={video.link} onClick={(e) => { e.preventDefault(); setPlayingVideo(video); }} style={{ flexShrink: 0, width: '110px' }}>
+                           {video.thumbnail ? <img src={video.thumbnail} alt={video.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <div style={{width:'100%', height:'100%', background:'#333'}}/>}
+                         </a>
+                         {/* Copy Link / Open New Tab Button Overlay for Left Panel */}
+                         <button
+                           onClick={(e) => { 
+                             e.stopPropagation(); 
+                             if (e.ctrlKey || e.metaKey) {
+                                 window.open(video.link, '_blank');
+                             } else {
+                                 navigator.clipboard.writeText(video.link);
+                                 const btn = e.currentTarget;
+                                 const oldText = btn.innerText;
+                                 btn.innerText = '✓';
+                                 setTimeout(() => btn.innerText = oldText, 1000);
+                             }
+                           }}
+                           title="Copiar Link (Ctrl+Click para abrir en nueva pestaña)"
+                           style={{
+                             position: 'absolute',
+                             top: '4px',
+                             right: '4px',
+                             zIndex: 10,
+                             width: '22px',
+                             height: '22px',
+                             borderRadius: '6px',
+                             background: 'rgba(0,0,0,0.6)',
+                             border: '1px solid rgba(255,255,255,0.3)',
+                             color: 'white',
+                             fontSize: '0.7rem',
+                             display: 'flex',
+                             alignItems: 'center',
+                             justifyContent: 'center',
+                             cursor: 'pointer',
+                             transition: 'all 0.2s',
+                             backdropFilter: 'blur(4px)'
+                           }}
+                           onMouseOver={(e) => { e.currentTarget.style.background = 'var(--color-primary)'; e.currentTarget.style.color = 'black'; }}
+                           onMouseOut={(e) => { e.currentTarget.style.background = 'rgba(0,0,0,0.6)'; e.currentTarget.style.color = 'white'; }}
+                         >
+                           🔗
+                         </button>
+                         <div style={{ padding: '8px', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                           <h4 style={{ margin: '0 0 4px', fontSize: '0.8rem', lineHeight: '1.2', WebkitLineClamp: 2, display: '-webkit-box', WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{video.name}</h4>
+                           <span style={{ fontSize: '0.7rem', color: 'var(--color-primary)' }}>{video.category}</span>
+                           <span style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)', marginBottom: '8px' }}>{video.directorName || video.user?.name || "Sin autor"}</span>
+                           <button onClick={() => setFavoritedVideos(prev => prev.filter(v => v.id !== video.id))} style={{ marginTop: 'auto', padding: '4px 8px', fontSize: '0.65rem', background: 'transparent', border: '1px solid var(--color-danger)', color: 'var(--color-danger)', borderRadius: '4px', cursor: 'pointer', alignSelf: 'flex-start' }}>Eliminar</button>
+                         </div>
+                      </div>
+                    ))}
+                 </div>
+               )}
+            </div>
+          </div>
+        )}
 
         {/* Floating Side Panel for Videos if a director is selected OR if it's loading */}
         {(selectedDirector || loadingVideos || classifying) && (
@@ -697,7 +820,7 @@ const Dashboard = ({ onLogout }) => {
                      key={video.id}
                      className="glass-panel"
                      style={{
-                       padding: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden',
+                       padding: 0, display: 'flex', flexDirection: 'row', overflow: 'hidden',
                        transition: 'transform 0.2s, box-shadow 0.2s',
                        boxShadow: isSelected ? '0 0 0 2px var(--color-primary), 0 0 12px rgba(0,201,255,0.3)' : undefined,
                        position: 'relative'
@@ -710,16 +833,16 @@ const Dashboard = ({ onLogout }) => {
                        title={isSelected ? 'Deseleccionar' : 'Seleccionar para clasificar'}
                        style={{
                          position: 'absolute',
-                         top: '8px',
-                         right: '8px',
+                         top: '4px',
+                         left: '4px',
                          zIndex: 10,
-                         width: '24px',
-                         height: '24px',
-                         borderRadius: '6px',
-                         background: isSelected ? 'var(--color-primary)' : 'rgba(0,0,0,0.55)',
-                         border: isSelected ? '2px solid var(--color-primary)' : '2px solid rgba(255,255,255,0.35)',
+                         width: '20px',
+                         height: '20px',
+                         borderRadius: '4px',
+                         background: isSelected ? 'var(--color-primary)' : 'rgba(0,0,0,0.6)',
+                         border: isSelected ? '2px solid var(--color-primary)' : '2px solid rgba(255,255,255,0.5)',
                          color: 'white',
-                         fontSize: '0.75rem',
+                         fontSize: '0.7rem',
                          display: 'flex',
                          alignItems: 'center',
                          justifyContent: 'center',
@@ -732,20 +855,62 @@ const Dashboard = ({ onLogout }) => {
                        {isSelected ? '✓' : ''}
                      </button>
 
-                     {/* Video link area - clicking here opens Vimeo */}
+                     {/* Copy Link / Open New Tab Button Overlay */}
+                     <button
+                       onClick={(e) => { 
+                         e.stopPropagation(); 
+                         if (e.ctrlKey || e.metaKey) {
+                             window.open(video.link, '_blank');
+                         } else {
+                             navigator.clipboard.writeText(video.link);
+                             const btn = e.currentTarget;
+                             const oldText = btn.innerText;
+                             btn.innerText = '✓';
+                             setTimeout(() => btn.innerText = oldText, 1000);
+                         }
+                       }}
+                       title="Copiar Link (Ctrl+Click para abrir en nueva pestaña)"
+                       style={{
+                         position: 'absolute',
+                         top: '4px',
+                         right: '4px',
+                         zIndex: 10,
+                         width: '24px',
+                         height: '24px',
+                         borderRadius: '6px',
+                         background: 'rgba(0,0,0,0.6)',
+                         border: '1px solid rgba(255,255,255,0.3)',
+                         color: 'white',
+                         fontSize: '0.8rem',
+                         display: 'flex',
+                         alignItems: 'center',
+                         justifyContent: 'center',
+                         cursor: 'pointer',
+                         transition: 'all 0.2s',
+                         backdropFilter: 'blur(4px)'
+                       }}
+                       onMouseOver={(e) => { e.currentTarget.style.background = 'var(--color-primary)'; e.currentTarget.style.color = 'black'; }}
+                       onMouseOut={(e) => { e.currentTarget.style.background = 'rgba(0,0,0,0.6)'; e.currentTarget.style.color = 'white'; }}
+                     >
+                       🔗
+                     </button>
+                     {/* Video link area - clicking here opens Vimeo playback modal */}
                      <a
                        href={video.link}
-                       target="_blank"
-                       rel="noreferrer"
-                       style={{ textDecoration: 'none', color: 'inherit', display: 'flex', flexDirection: 'column' }}
+                       onClick={(e) => { e.preventDefault(); setPlayingVideo(video); }}
+                       style={{ flexShrink: 0, width: '130px', textDecoration: 'none', color: 'inherit', display: 'flex', cursor: 'pointer' }}
                      >
-                       {video.thumbnail && (
-                         <img src={video.thumbnail} alt={video.name} style={{ width: '100%', height: '140px', objectFit: 'cover' }} />
+                       {video.thumbnail ? (
+                         <img src={video.thumbnail} alt={video.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                       ) : (
+                         <div style={{ width: '100%', height: '100%', background: '#333' }} />
                        )}
                      </a>
 
-                     <div style={{ padding: 'var(--space-sm)' }}>
-                       <div style={{ display: 'flex', alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: '4px', gap: '4px', position: 'relative' }}>
+                     <div style={{ padding: 'var(--space-sm)', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                       <h3 style={{ margin: '0 0 4px', fontSize: '0.85rem', lineHeight: '1.2' }}>{video.name}</h3>
+                       
+                       <div style={{ display: 'flex', alignItems: 'flex-start', flexWrap: 'wrap', marginTop: 'auto', gap: '4px', position: 'relative' }}>
                           <span 
                             onClick={(e) => { e.preventDefault(); setRetagVideo(retagVideo?.id === video.id ? null : video); setCustomTagInput(''); }}
                             style={{ background: 'var(--color-primary)', color: 'white', fontSize: '0.65rem', padding: '2px 8px', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', transition: 'transform 0.2s', transform: retagVideo?.id === video.id ? 'scale(1.1)' : 'scale(1)' }}
@@ -760,7 +925,7 @@ const Dashboard = ({ onLogout }) => {
                           )}
                           {video.brand && video.brand !== 'Indefinida' && (
                              <span style={{ background: 'rgba(255,215,0,0.15)', color: '#ffd700', border: '1px dashed rgba(255,215,0,0.4)', fontSize: '0.65rem', padding: '2px 8px', borderRadius: '12px', fontWeight: 'bold' }}>
-                               ★ {video.brand}
+                               {video.brand}
                              </span>
                           )}
                        </div>
@@ -817,10 +982,6 @@ const Dashboard = ({ onLogout }) => {
                             </div>
                          </div>
                        )}
-
-                       <a href={video.link} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', color: 'inherit' }}>
-                         <h3 style={{ margin: 0, fontSize: '0.9rem', lineHeight: '1.3' }}>{video.name}</h3>
-                       </a>
                      </div>
                    </div>
                    );
@@ -891,6 +1052,22 @@ const Dashboard = ({ onLogout }) => {
                </div>
             </div>
          </div>
+      )}
+
+      {/* Fullscreen Video Player Modal */}
+      {playingVideo && (
+         <VideoModal 
+             video={playingVideo} 
+             isFavorited={favoritedVideos.some(v => v.id === playingVideo.id)}
+             onToggleFavorite={() => {
+                setFavoritedVideos(prev => 
+                   prev.some(v => v.id === playingVideo.id) 
+                     ? prev.filter(v => v.id !== playingVideo.id) 
+                     : [...prev, playingVideo]
+                );
+             }}
+             onClose={() => setPlayingVideo(null)} 
+         />
       )}
     </div>
   );

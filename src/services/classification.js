@@ -17,7 +17,12 @@ export const classifyVideos = async (apiKey, videosArray) => {
         });
 
         if (!response.ok) {
-            throw new Error(`Error Gemin proxy: ${response.statusText}`);
+            let errorText = response.statusText;
+            try {
+                const errorData = await response.json();
+                if (errorData.error) errorText = errorData.error;
+            } catch (je) {}
+            throw new Error(errorText);
         }
 
         // El backend nos devuelve un objeto: { data: arrayDeVideos, activeModel: 'gemini...' }
@@ -25,10 +30,8 @@ export const classifyVideos = async (apiKey, videosArray) => {
 
     } catch (e) {
         console.error("Error connecting to Gemini Proxy:", e);
-        // Fallback robusto
-        return {
-            data: videosArray.map(v => ({ ...v, category: 'Sin clasificar', subCategory: 'S/D', brand: 'Indefinida' })),
-            activeModel: 'Offline/Error'
-        };
+        // Si no podemos manejarlo adecuadamente, propagamos el error para que useApp informe al usuario 
+        // (Violación de silenciamiento corregida).
+        throw e;
     }
 }

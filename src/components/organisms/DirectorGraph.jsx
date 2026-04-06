@@ -31,19 +31,34 @@ const getFibonacciSpherePoints = (samples, radius = 5) => {
   return points;
 };
 
-const Node = ({ dir, pos, isSelected, isDimmed, hasPendingVideos, onClick }) => {
+const Node = ({ dir, pos, isSelected, isDimmed, hasPendingVideos, visits, onClick }) => {
   const totalVideos = dir.metadata?.connections?.videos?.total || 0;
   // Use log base 10 to gracefully scale extreme differences (e.g. 10 vs 5000)
   const logFactor = Math.log10(totalVideos + 1);
   const sphereSize = (isSelected ? 0.35 : 0.12) * (0.8 + logFactor * 0.25);
   const fontSize = isSelected ? Math.max(16, Math.round(10 + logFactor * 3)) : Math.round(8 + logFactor * 3);
 
-  // Color palette: selected=blue, pending=amber, done=white
-  const sphereColor   = isSelected ? "#3b82f6" : hasPendingVideos ? "#f97316" : "#ffffff";
-  const emissiveColor = isSelected ? "#1d4ed8" : hasPendingVideos ? "#c2410c" : "#ffffff";
-  const emissiveInt   = isSelected ? 0.5       : hasPendingVideos ? 0.35      : 0.4;
-  const labelBorder   = isSelected ? 'var(--color-primary)' : hasPendingVideos ? 'rgba(249,115,22,0.5)' : 'rgba(255,255,255,0.1)';
-  const labelBg       = isSelected ? 'var(--color-primary)' : hasPendingVideos ? 'rgba(249,115,22,0.15)' : 'rgba(15, 17, 21, 0.7)';
+  // Color palette: selected=blue, pending=amber, 2+visits=yellow, 1visit=green, done=white
+  let sphereColor = "#ffffff";
+  let emissiveColor = "#ffffff";
+  let emissiveInt = 0.4;
+  let labelBorder = 'rgba(255,255,255,0.1)';
+  let labelBg = 'rgba(15, 17, 21, 0.7)';
+  let labelColor = 'white';
+
+  if (isSelected) {
+      sphereColor = "#3b82f6"; emissiveColor = "#1d4ed8"; emissiveInt = 0.5;
+      labelBorder = 'var(--color-primary)'; labelBg = 'var(--color-primary)';
+  } else if (visits > 1) {
+      sphereColor = "#facc15"; emissiveColor = "#a16207"; emissiveInt = 0.45;
+      labelBorder = 'rgba(250,204,21,0.5)'; labelBg = 'rgba(250,204,21,0.1)'; labelColor = '#fef08a';
+  } else if (visits === 1) {
+      sphereColor = "#4ade80"; emissiveColor = "#166534"; emissiveInt = 0.45;
+      labelBorder = 'rgba(74,222,128,0.5)'; labelBg = 'rgba(74,222,128,0.1)'; labelColor = '#bbf7d0';
+  } else if (hasPendingVideos) {
+      sphereColor = "#f97316"; emissiveColor = "#c2410c"; emissiveInt = 0.35;
+      labelBorder = 'rgba(249,115,22,0.5)'; labelBg = 'rgba(249,115,22,0.15)'; labelColor = '#fdba74';
+  }
 
   return (
     <group position={[pos.x, pos.y, pos.z]}>
@@ -67,7 +82,7 @@ const Node = ({ dir, pos, isSelected, isDimmed, hasPendingVideos, onClick }) => 
               padding: `${isSelected ? 6 : Math.round(3 + logFactor)}px ${Math.round(8 + logFactor * 2)}px`,
               borderRadius: '12px',
               border: `1px solid ${labelBorder}`,
-              color: hasPendingVideos && !isSelected ? '#fdba74' : 'white',
+              color: labelColor,
               fontSize: `${fontSize}px`,
               fontWeight: isSelected ? 'bold' : 'normal',
               whiteSpace: 'nowrap',
@@ -120,7 +135,7 @@ const CategoryNode = ({ category, count, pos, onClick }) => {
     )
 }
 
-const Scene = ({ directors, selectedDirector, videos, allCachedVideos, onDirectorClick, onCategorySelect }) => {
+const Scene = ({ directors, selectedDirector, videos, allCachedVideos, visitedMap, onDirectorClick, onCategorySelect }) => {
   const [expanded, setExpanded] = useState(true);
   
   // Base radius for directors expands slightly if there are many
@@ -192,7 +207,7 @@ const Scene = ({ directors, selectedDirector, videos, allCachedVideos, onDirecto
              {/* The cord/line connecting center to node */}
              <Line
                points={[[0,0,0], [pos.x, pos.y, pos.z]]}
-               color={isSelected ? "#3b82f6" : hasPendingVideos ? "#f97316" : "#ffffff"}
+               color={isSelected ? "#3b82f6" : hasPendingVideos ? "#f97316" : (visitedMap?.[dir.uri] > 1 ? "#facc15" : visitedMap?.[dir.uri] === 1 ? "#4ade80" : "#ffffff")}
                lineWidth={isSelected ? 2 : 1}
                transparent
                opacity={isDimmed ? 0.05 : (isSelected ? 0.8 : 0.15)}
@@ -204,6 +219,7 @@ const Scene = ({ directors, selectedDirector, videos, allCachedVideos, onDirecto
                 isSelected={isSelected} 
                 isDimmed={isDimmed}
                 hasPendingVideos={hasPendingVideos}
+                visits={visitedMap?.[dir.uri] || 0}
                 onClick={onDirectorClick} 
              />
              

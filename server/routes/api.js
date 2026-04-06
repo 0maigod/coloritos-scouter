@@ -139,8 +139,26 @@ router.get('/vimeo/videos', async (req, res) => {
             let dbVid = await Video.findOne({ uri: v.uri });
             const thumb = v.pictures?.sizes?.[0]?.link || dbVid?.thumbnail || '';
 
-            // Backfill thumbnail if already in DB but lacking the field
-            if (dbVid && !dbVid.thumbnail && thumb) {
+            // CRÍTICO: Si el video viene de Vimeo pero no existe en MongoDB, lo guardamos INMEDIATAMENTE
+            // como "Sin clasificar" para no volver a descargarlo de la API de Vimeo nunca más (Cache-First real).
+            if (!dbVid) {
+                await Video.create({
+                   uri: v.uri,
+                   name: v.name,
+                   description: v.description,
+                   link: v.link,
+                   duration: v.duration,
+                   thumbnail: thumb,
+                   pictures: v.pictures,
+                   player_embed_url: v.player_embed_url,
+                   directorUri: v.user?.uri || dirUri,
+                   category: 'Sin clasificar',
+                   subCategory: 'S/D',
+                   brand: 'Indefinida',
+                   manualOverride: false
+                });
+            } else if (!dbVid.thumbnail && thumb) {
+                // Backfill thumbnail si ya existía pero no lo tenía
                 Video.updateOne({ uri: v.uri }, { $set: { thumbnail: thumb } }).exec();
             }
 
@@ -245,22 +263,26 @@ ${JSON.stringify(promptData, null, 2)}`;
                 activeModelUsed = 'gpt-4o-mini';
                 
                 if (!process.env.OPENAI_API_KEY) {
-                    throw new Error("Gemini falló y no hay llave OPENAI_API_KEY para hacer el fallback de emergencia.");
+                    throw new Error("Gemini falló y no hay llave OPENAI_API_KEY para hacer fallback.");
                 }
 
-                const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-                const completion = await openai.chat.completions.create({
-                    model: "gpt-4o-mini",
-                    messages: [
-                        { role: "system", content: "You are a helpful JSON data classification system. Always respond with a strictly valid raw JSON array and absolutely nothing else." },
-                        { role: "user", content: prompt }
-                    ]
-                });
-                
-                const rawOutput = completion.choices[0].message.content.trim();
-                // Limpiar posibles backticks si chatgpt se olvidó de la regla (ej: ```json [...] ```)
-                const cleanJSON = rawOutput.replace(/```json/gi, '').replace(/```/g, '').trim();
-                chunkResultJSON = JSON.parse(cleanJSON);
+                try {
+                    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+                    const completion = await openai.chat.completions.create({
+                        model: "gpt-4o-mini",
+                        messages: [
+                            { role: "system", content: "You are a helpful JSON data classification system. Always respond with a strictly valid raw JSON array and absolutely nothing else." },
+                            { role: "user", content: prompt }
+                        ]
+                    });
+                    
+                    const rawOutput = completion.choices[0].message.content.trim();
+                    const cleanJSON = rawOutput.replace(/```json/gi, '').replace(/```/g, '').trim();
+                    chunkResultJSON = JSON.parse(cleanJSON);
+                } catch (openAiErr) {
+                    console.error("OpenAI Fallback también falló:", openAiErr.message);
+                    throw new Error("Ambas Inteligencias Artificiales fallaron (Posible límite de cuotas de facturación excedido). Por favor, revisa tus cuentas de Google y OpenAI.");
+                }
             }
 
             if (Array.isArray(chunkResultJSON)) {
