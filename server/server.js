@@ -25,11 +25,11 @@ const path = require('path');
 app.use('/coloritos/api', apiRoutes);
 
 // Producción: Servir el frontend de React ensamblado (dist/)
-app.use('/coloritos', express.static(path.join(__dirname, '../dist')));
+app.use('/coloritos', express.static(path.resolve(__dirname, '..', 'dist')));
 
 // Fallback: Cualquier ruta que no sea de la API, se la enviamos a React
 app.get('/coloritos/{*path}', (req, res) => {
-    res.sendFile(path.join(__dirname, '../dist/index.html'));
+    res.sendFile(path.resolve(__dirname, '..', 'dist', 'index.html'));
 });
 
 // Redireccionar la raiz pura a /coloritos/
