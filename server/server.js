@@ -22,15 +22,18 @@ const apiRoutes = require('./routes/api');
 const path = require('path');
 
 // Rutas API (Ocultas)
-app.use('/api', apiRoutes);
+app.use('/coloritos/api', apiRoutes);
 
 // Producción: Servir el frontend de React ensamblado (dist/)
-app.use(express.static(path.join(__dirname, '../dist')));
+app.use('/coloritos', express.static(path.join(__dirname, '../dist')));
 
 // Fallback: Cualquier ruta que no sea de la API, se la enviamos a React
-app.get('/{*path}', (req, res) => {
+app.get('/coloritos/{*path}', (req, res) => {
     res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
+
+// Redireccionar la raiz pura a /coloritos/
+app.get('/', (req, res) => res.redirect('/coloritos/'));
 
 // Iniciamos el motor Node.js
 app.listen(PORT, () => {

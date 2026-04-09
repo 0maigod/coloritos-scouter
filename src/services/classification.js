@@ -2,7 +2,7 @@
 // OPINIONATED REWRITE: Proxy hacia el Backend Opcion B
 // El SDK pesado de Google ya no bloquea el frontal.
 
-const API_URL = import.meta.env.PROD ? '/api' : 'http://localhost:3000/api';
+const API_URL = import.meta.env.PROD ? '/coloritos/api' : 'http://localhost:3000/coloritos/api';
 
 export const classifyVideos = async (apiKey, videosArray) => {
     if (!videosArray || videosArray.length === 0) return { data: [], activeModel: 'Ninguno' };
