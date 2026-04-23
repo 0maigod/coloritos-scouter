@@ -192,9 +192,9 @@ router.post('/gemini/classify', async (req, res) => {
         let resultJSON = [];
         let activeModelUsed = 'gemini-2.5-flash';
 
-        // Dividir el array en lotes (chunks) de 50 videos
-        // Esto evita limites de contexto o respuesta maximos en las API LLM
-        const chunkSize = 50;
+        // Dividir el array en lotes (chunks) más pequeños de 15 videos
+        // Esto evita limites de contexto, respuestas truncadas y alucinaciones en las API LLM
+        const chunkSize = 15;
         for (let i = 0; i < videosArray.length; i += chunkSize) {
             const chunk = videosArray.slice(i, i + chunkSize);
             const batchNum = Math.floor(i / chunkSize) + 1;
@@ -202,7 +202,7 @@ router.post('/gemini/classify', async (req, res) => {
             const promptData = chunk.map(v => ({
                 id: v.uri, // usamos uri ahora
                 title: v.name,
-                description: v.description?.substring(0, 200) || '',
+                description: v.description?.substring(0, 100) || '',
                 tags: v.tags
             }));
 
@@ -259,11 +259,11 @@ ${JSON.stringify(promptData, null, 2)}`;
             } 
             // 2. BACKUP / CONTINGENCIA: OPENAI GPT-4o-MINI
             catch (geminiErr) {
-                console.warn(`⚠️ Falló Gemini en el lote ${batchNum} (Posible límite de cuota). Activando fallback a OpenAI GPT-4o-mini...`, geminiErr.message);
+                console.warn(`⚠️ Falló Gemini en el lote ${batchNum} (Posible límite de cuota o parseo). Error original:`, geminiErr.message);
                 activeModelUsed = 'gpt-4o-mini';
                 
                 if (!process.env.OPENAI_API_KEY) {
-                    throw new Error("Gemini falló y no hay llave OPENAI_API_KEY para hacer fallback.");
+                    throw new Error(`Gemini falló y no hay llave OPENAI_API_KEY para hacer fallback. Error de Gemini: ${geminiErr.message}`);
                 }
 
                 try {
@@ -280,8 +280,8 @@ ${JSON.stringify(promptData, null, 2)}`;
                     const cleanJSON = rawOutput.replace(/```json/gi, '').replace(/```/g, '').trim();
                     chunkResultJSON = JSON.parse(cleanJSON);
                 } catch (openAiErr) {
-                    console.error("OpenAI Fallback también falló:", openAiErr.message);
-                    throw new Error("Ambas Inteligencias Artificiales fallaron (Posible límite de cuotas de facturación excedido). Por favor, revisa tus cuentas de Google y OpenAI.");
+                    console.error(`OpenAI Fallback también falló en el lote ${batchNum}:`, openAiErr.message);
+                    throw new Error(`Ambas IAs fallaron en el lote ${batchNum}. Gemini: ${geminiErr.message}. OpenAI: ${openAiErr.message}`);
                 }
             }
 

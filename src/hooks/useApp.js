@@ -100,8 +100,10 @@ export const useApp = () => {
       }));
 
     } catch (err) {
-      console.error(err);
-      setError(err.message || 'Error parsing backend videos');
+      console.error('fetchDirectorVideos caught error:', err);
+      // Extraemos el mensaje real del error si existe, si no, convertimos el objeto a string
+      const errMsg = err?.message || (typeof err === 'string' ? err : JSON.stringify(err));
+      setError(`Error procesando videos: ${errMsg || 'Desconocido'}`);
     } finally {
       setLoadingVideos(false);
       setClassifying(false);
